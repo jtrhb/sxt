@@ -1,0 +1,49 @@
+{
+  "createdAt": 1743129380565,
+  "topic": "647e8f23d15d890d5cc02700/67bc150804f0000000000003",
+  "data": {
+    "trace_id": "chatline-0a4c170f.0025996-484202-1247380",
+    "payload": {
+      "first_unreply_time": 1743088741331,
+      "set_sixin_message": true,
+      "sixin_message": {
+        "store_id": 43,
+        "set_message_type": true,
+        "set_content": true,
+        "set_receiver_id": true,
+        "receiver_id": "65000f210000000005000a45",
+        "set_grantor_user_id": false,
+        "created_at": 1743129380010,
+        "message_type": "TEXT",
+        "content": "hehe",
+        "message_source": "front_end",
+        "sender_id": "67d24fee000000000e01235c",
+        "set_created_at": true,
+        "set_sender_id": true,
+        "set_store_id": true,
+        "set_id": true,
+        "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7e60b2414b419",
+        "set_message_source": true
+      },
+      "update_time": 1743129380010,
+      "set_message_extension": true,
+      "is_replied": false,
+      "message_extension": {
+        "preview": "hehe",
+        "set_csa_account_no": false,
+        "sender_type": 1,
+        "set_grantor_user_id": false,
+        "set_sender_type": true,
+        "customer_user_id": "67d24fee000000000e01235c",
+        "set_preview": true,
+        "last_msg_ts": 0,
+        "set_customer_user_id": true,
+        "set_last_msg_ts": false,
+        "set_csa_name": false
+      }
+    },
+    "type": "PUSH_SIXINTONG_MSG"
+  },
+  "type": 2,
+  "seq": 5
+}

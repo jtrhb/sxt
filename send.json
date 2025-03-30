@@ -1,0 +1,51 @@
+{
+  "createdAt": 1743129410183,
+  "topic": "647e8f23d15d890d5cc02700/67bc150804f0000000000003",
+  "data": {
+    "trace_id": "chatline-service-commerce-0a3f24d0.30202-484202-180962",
+    "payload": {
+      "set_sixin_message": true,
+      "sixin_message": {
+        "store_id": 44,
+        "set_message_type": true,
+        "set_content": true,
+        "set_receiver_id": true,
+        "receiver_id": "67d24fee000000000e01235c",
+        "set_grantor_user_id": false,
+        "created_at": 1743129409804,
+        "message_type": "TEXT",
+        "content": "测试消息",
+        "message_source": "CUSTOMER_BRANCH_SYSTEM",
+        "sender_id": "65000f210000000005000a45",
+        "set_created_at": true,
+        "set_sender_id": true,
+        "set_store_id": true,
+        "set_id": true,
+        "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7e60b4163a93e",
+        "set_message_source": true
+      },
+      "update_time": 1743129409804,
+      "set_message_extension": true,
+      "uuid": "1743129409643-15337692",
+      "is_replied": true,
+      "message_extension": {
+        "preview": "测试消息",
+        "set_csa_account_no": true,
+        "sender_type": 0,
+        "set_grantor_user_id": false,
+        "csa_account_no": "7472233391",
+        "csa_name": "bb8",
+        "last_msg_ts": 0,
+        "set_customer_user_id": true,
+        "set_last_msg_ts": false,
+        "set_sender_type": true,
+        "customer_user_id": "67d24fee000000000e01235c",
+        "set_preview": true,
+        "set_csa_name": true
+      }
+    },
+    "type": "PUSH_SIXINTONG_MSG"
+  },
+  "type": 2,
+  "seq": 7
+}

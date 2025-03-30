@@ -1,0 +1,225 @@
+{
+  "success": true,
+  "msg": "成功",
+  "data": {
+    "messages": [
+      {
+        "sixin_message": {
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dc242f6eea84",
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c",
+          "message_type": "TEXT",
+          "content": "测试消息",
+          "created_at": 1742480431220,
+          "store_id": 13,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM"
+        },
+        "message_extension": {
+          "csa_name": "bb8",
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c"
+        }
+      },
+      {
+        "sixin_message": {
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dc240b4b82da",
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c",
+          "message_type": "TEXT",
+          "content": "1",
+          "created_at": 1742480395902,
+          "store_id": 12,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "bb8"
+        }
+      },
+      {
+        "sixin_message": {
+          "receiver_id": "67d24fee000000000e01235c",
+          "message_type": "TEXT",
+          "content": "1",
+          "created_at": 1742479793790,
+          "store_id": 11,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dc21b14bb2ad",
+          "sender_id": "65000f210000000005000a45"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "bb8"
+        }
+      },
+      {
+        "sixin_message": {
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c",
+          "message_type": "TEXT",
+          "content": "1",
+          "created_at": 1742479756668,
+          "store_id": 10,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dc218c5e124a"
+        },
+        "message_extension": {
+          "csa_name": "bb8",
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c"
+        }
+      },
+      {
+        "sixin_message": {
+          "message_type": "TEXT",
+          "content": "123",
+          "created_at": 1742390807190,
+          "store_id": 9,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dac61764809c",
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "bb8"
+        }
+      },
+      {
+        "sixin_message": {
+          "receiver_id": "67d24fee000000000e01235c",
+          "message_type": "TEXT",
+          "content": "123",
+          "created_at": 1742390775770,
+          "store_id": 8,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7dac5f76ede1f",
+          "sender_id": "65000f210000000005000a45"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "bb8"
+        }
+      },
+      {
+        "sixin_message": {
+          "message_type": "TEXT",
+          "content": "hello back",
+          "created_at": 1742384166901,
+          "store_id": 7,
+          "message_source": "CUSTOMER_BRANCH_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7daac266384c3",
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "bb8"
+        }
+      },
+      {
+        "sixin_message": {
+          "message_type": "TEXT",
+          "content": "new",
+          "created_at": 1742365762475,
+          "store_id": 6,
+          "message_source": "front_end",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7da644214bda7",
+          "sender_id": "67d24fee000000000e01235c",
+          "receiver_id": "65000f210000000005000a45"
+        },
+        "message_extension": {
+          "sender_type": 1,
+          "customer_user_id": "67d24fee000000000e01235c"
+        }
+      },
+      {
+        "sixin_message": {
+          "message_type": "TEXT",
+          "content": "hello",
+          "created_at": 1742364791913,
+          "store_id": 5,
+          "message_source": "front_end",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7da607713cb37",
+          "sender_id": "67d24fee000000000e01235c",
+          "receiver_id": "65000f210000000005000a45"
+        },
+        "message_extension": {
+          "sender_type": 1,
+          "customer_user_id": "67d24fee000000000e01235c"
+        }
+      },
+      {
+        "message_extension": {
+          "sender_type": 1,
+          "customer_user_id": "67d24fee000000000e01235c"
+        },
+        "sixin_message": {
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7da5fc514bdf1",
+          "sender_id": "67d24fee000000000e01235c",
+          "receiver_id": "65000f210000000005000a45",
+          "message_type": "TEXT",
+          "content": "测试",
+          "created_at": 1742364613236,
+          "store_id": 4,
+          "message_source": "front_end"
+        }
+      },
+      {
+        "sixin_message": {
+          "message_type": "CARD",
+          "content": "{\"contentType\":\"BRAND_APPRAISE_CARD\",\"msgContentType\":\"APPRAISE\",\"title\":\"您对本次咨询对话满意吗\",\"type\":\"scoreCard\",\"selectedTitle\":\"评价成功，感谢您的支持\",\"customerId\":\"7472233391\",\"id\":\"1009210294883888723\",\"scores\":[{\"selectedImage\":\"https://fe-platform.xhscdn.com/platform/104101l03193a5fe44i06bento8mg0000000000874u086\",\"normalImage\":\"https://fe-platform.xhscdn.com/platform/104101l0319arf06v4i06bento8mg0000000000bknqelu\",\"text\":\"非常不满意\",\"value\":\"1\"},{\"selectedImage\":\"https://fe-platform.xhscdn.com/platform/104101l03193a5ffuki06bento8mg0000000000fg0964m\",\"normalImage\":\"https://fe-platform.xhscdn.com/platform/104101l0319arf0c8kk06bento8mg0000000000f0pqld8\",\"text\":\"不满意\",\"value\":\"2\"},{\"selectedImage\":\"https://fe-platform.xhscdn.com/platform/104101l03193a5fhqki06bento8mg0000000000b55fh4c\",\"normalImage\":\"https://fe-platform.xhscdn.com/platform/104101l0319arf0j5kg06bento8mg00000000009qm284s\",\"text\":\"一般\",\"value\":\"3\"},{\"selectedImage\":\"https://fe-platform.xhscdn.com/platform/104101l03193a5fk1ko06bento8mg0000000000b21cbk2\",\"normalImage\":\"https://fe-platform.xhscdn.com/platform/104101l0319arf0oplk06bento8mg0000000000dcq1d1a\",\"text\":\"满意\",\"value\":\"4\"},{\"selectedImage\":\"https://fe-platform.xhscdn.com/platform/104101l03193a5flvkg06bento8mg0000000000edic6jk\",\"normalImage\":\"https://fe-platform.xhscdn.com/platform/104101l0319arf0vkkm06bento8mg0000000000b39jgok\",\"text\":\"非常满意\",\"value\":\"5\"}]}",
+          "created_at": 1742218336937,
+          "store_id": 3,
+          "message_source": "SXT_SYSTEM",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7d8246063a279",
+          "sender_id": "65000f210000000005000a45",
+          "receiver_id": "67d24fee000000000e01235c"
+        },
+        "message_extension": {
+          "sender_type": 0,
+          "customer_user_id": "67d24fee000000000e01235c",
+          "csa_name": "乐翼游轻奢咨询"
+        }
+      },
+      {
+        "sixin_message": {
+          "receiver_id": "65000f210000000005000a45",
+          "message_type": "TEXT",
+          "content": "人工",
+          "created_at": 1742218242020,
+          "store_id": 2,
+          "message_source": "front_end",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7d824020e6f41",
+          "sender_id": "67d24fee000000000e01235c"
+        },
+        "message_extension": {
+          "customer_user_id": "67d24fee000000000e01235c",
+          "sender_type": 1
+        }
+      },
+      {
+        "sixin_message": {
+          "sender_id": "67d24fee000000000e01235c",
+          "receiver_id": "65000f210000000005000a45",
+          "message_type": "TEXT",
+          "content": "hello",
+          "created_at": 1741961484789,
+          "store_id": 1,
+          "message_source": "front_end",
+          "id": "65000f210000000005000a45.67d24fee000000000e01235c.1e7d4390c0e4fe0"
+        },
+        "message_extension": {
+          "sender_type": 1,
+          "customer_user_id": "67d24fee000000000e01235c"
+        }
+      }
+    ]
+  },
+  "code": 0
+}
