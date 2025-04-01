@@ -50,6 +50,9 @@ class WebSocketClient:
                 await self.ack(server_message["seq"])
                 if server_message['data']['type'] == 'PUSH_SIXINTONG_MSG' and server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
                     produce_new_msg(server_message)
+            case 4:
+                await self.ws_send({"type": 132})
+                await self.ws_send({"type": 4})
             case 129:  # 服务器返回 secureKey
                 next_message = {
                     "type": 10,
@@ -69,9 +72,11 @@ class WebSocketClient:
                     }
                 }
                 await self.ws_send(next_message)
-                await self.ws_send({"type": 4})  # 发送心跳
             case 132:  # 服务器心跳
                 await asyncio.sleep(60)
+                await self.ws_send({"type": 4})
+            case 140:
+                await asyncio.sleep(30)
                 await self.ws_send({"type": 4})
 
     async def websocket_connect(self):
