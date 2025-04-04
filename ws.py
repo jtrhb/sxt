@@ -2,10 +2,12 @@ import asyncio
 import json
 import base64
 import websockets
+import logging
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from message_queue import produce_new_msg
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 # AES-ECB 加密
 def aes_ecb_encrypt(key: str, plaintext: str) -> str:
     cipher = AES.new(key.encode(), AES.MODE_ECB)
@@ -37,7 +39,7 @@ class WebSocketClient:
         if self.websocket:
             data["seq"] = await self.increase_seq()
             await self.websocket.send(json.dumps(data))
-            print(f"> Sent: {data}\n")
+            logging.info(f"> Sent: {data}\n")
 
     async def ack(self, ack_seq):
         await self.ws_send({"type": 130, "ack": ack_seq})
@@ -84,7 +86,7 @@ class WebSocketClient:
             try:
                 async with websockets.connect(self.WS_URI) as ws:
                     self.websocket = ws
-                    print("[Connected] WebSocket connection established.")
+                    logging.info("[Connected] WebSocket connection established.")
 
                     await self.ws_send({
                         "type": 1,
@@ -95,14 +97,14 @@ class WebSocketClient:
                     while True:
                         response = await ws.recv()
                         server_message = json.loads(response)
-                        print(f"< Received: {json.dumps(server_message, ensure_ascii=False)}\n")
+                        logging.info(f"< Received: {json.dumps(server_message, ensure_ascii=False)}\n")
                         asyncio.create_task(self.handle_message(server_message))
 
             except websockets.exceptions.ConnectionClosed:
-                print("[Error] Connection closed, reconnecting in 3s...")
+                logging.info("[Error] Connection closed, reconnecting in 3s...")
                 await asyncio.sleep(3)
             except asyncio.CancelledError:
-                print("[Cancelled] WebSocket task cancelled.")
+                logging.info("[Cancelled] WebSocket task cancelled.")
                 break
 
 
