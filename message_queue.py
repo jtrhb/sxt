@@ -14,6 +14,8 @@ url = urlparse(redis_url)
 redis_client = redis.Redis(
     host=url.hostname,
     port=url.port,
+    username=url.username,
+    password=url.password,
     db=0,
     decode_responses=True
 )
