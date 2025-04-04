@@ -12,6 +12,7 @@ Naked==0.1.32
 pycryptodome==3.22.0
 pydantic==2.11.0
 pydantic_core==2.33.0
+python-dotenv==1.1.0
 PyYAML==6.0.2
 redis==5.2.1
 requests==2.32.3

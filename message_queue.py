@@ -1,13 +1,19 @@
 import redis
 import json
 import time
+import os
 from datetime import datetime
+from dotenv import load_dotenv
+from urllib.parse import urlparse
 import threading
 
+load_dotenv()
 # Redis连接配置
+redis_url = os.getenv("REDIS_URL")
+url = urlparse(redis_url)
 redis_client = redis.Redis(
-    host='localhost',
-    port=6379,
+    host=url.hostname,
+    port=url.port,
     db=0,
     decode_responses=True
 )
@@ -83,7 +89,7 @@ class MessageConsumer:
         print("Consumer stopped listening")
 
 def produce_new_msg(msg):
-    message_id = f"msg:{int(time.time())}:{msg['data']['trace_id']}"
+    message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
     payload = msg['data']['payload']['sixin_message']
     message = {
         "user_id": payload['sender_id'],
