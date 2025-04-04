@@ -1,6 +1,8 @@
 #!/bin/bash
-echo "Start api"
-python main.py
+echo "🚀 Starting API"
+python main.py &
 
-echo "Start websocket"
-python ws.py
+echo "🛰️ Starting WebSocket"
+python ws.py &
+
+wait
