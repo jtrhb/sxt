@@ -8,4 +8,4 @@ RUN pip install -r requirements.txt
 
 EXPOSE 3333
 
-CMD ["/start.sh"]
+CMD ["./start.sh"]
