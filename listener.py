@@ -1,4 +1,4 @@
-from core.pysxt.core import SXTWebSocketClient, aes_ecb_encrypt
+from engine.pysxt.core import SXTWebSocketClient, aes_ecb_encrypt
 from message_queue import produce_new_msg
 import asyncio
 
@@ -44,7 +44,7 @@ async def start():
         user_id="67bc150804f0000000000003",
         seller_id="6698b21b3289650015d6f4df",
         token="7f54749ef19aaf9966ed7a616982c016bda5dfba",
-        sxt_id="65000f210000000005000a45"  # sender_id of the account
+        # sxt_id="65000f210000000005000a45"  # sender_id of the account
     )
     await client.connect()
 
