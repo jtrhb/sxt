@@ -1,10 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from message import SXT, cookies
+# from message import SXT, cookies
+from pysxt import SXT
+import json
 
 app = FastAPI()
-
+cookies = {
+    "access-token-sxt.xiaohongshu.com": "customer.sxt.AT-68c517483891070912775173wndbrtlvszckosbb"
+}
 # 实例化SXT类
 sxt = SXT(cookies=cookies)
 
@@ -38,15 +42,31 @@ def get_chats(is_active: str = "false", limit: str = "80"):
     return response
 
 @app.post("/chat_messages")
-def get_chat_messages(query: MessageList):
+async def get_chat_messages(query: MessageList):
     """获取具体聊天记录"""
-    response = sxt.get_chat_messages(query.customer_user_id, query.limit)
+    response = await sxt.get_chat_messages(query.customer_user_id, query.limit)
     return JSONResponse(content = response)
 
 @app.post("/send_text")
-def send_text(msg: SendMessage):
+async def send_text(msg: SendMessage):
     """发送文本消息"""
-    response = sxt.send_text(msg.receiver_id, msg.content)
+    response = await sxt.send_text(msg.receiver_id, msg.content)
+    return response
+
+@app.post("/send_image")
+async def send_text(msg: SendMessage):
+    """发送文本消息"""
+    response = await sxt.send_image(msg.receiver_id, msg.content)
+    return response
+
+@app.post("/send_business_card")
+async def send_business_card(msg: SendMessage):
+    """发送名片"""
+    business_cards = await sxt.get_business_cards()
+    response = await sxt.send_card(
+        msg.receiver_id,
+        json.dumps({"type": "commercialBusinessCard", **business_cards["data"]["list"][0]})
+    )
     return response
 
 @app.get("/read_chat")

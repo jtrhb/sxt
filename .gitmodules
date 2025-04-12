@@ -1,6 +1,0 @@
-[submodule "core"]
-	path = core
-	url = https://github.com/miloira/pysxt.git
-[submodule "pysxt"]
-	path = pysxt
-	url = https://github.com/miloira/pysxt.git
