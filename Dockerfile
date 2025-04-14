@@ -4,6 +4,8 @@ WORKDIR /sxt
 
 COPY . .
 
+RUN git submodule update --init --recursive
+
 RUN pip install -r requirements.txt
 
 EXPOSE 3333
