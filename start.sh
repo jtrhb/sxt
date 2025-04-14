@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "项目文件列表："
-find . -type f
+find .
 
 echo "🚀 Starting API"
 python main.py &
