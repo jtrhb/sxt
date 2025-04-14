@@ -3,6 +3,6 @@ echo "🚀 Starting API"
 python main.py &
 
 echo "🛰️ Starting WebSocket"
-python ws.py &
+python listener.py &
 
 wait
