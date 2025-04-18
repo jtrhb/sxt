@@ -1,6 +1,10 @@
-from engine.pysxt.core import SXTWebSocketClient, aes_ecb_encrypt
-from message_queue import produce_new_msg
+from engine.pysxt.core import SXTWebSocketClient, aes_ecb_encrypt, SXT
 import asyncio
+import json
+import time
+import typing
+import threading
+from redis_client import publisher
 
 class Listener(SXTWebSocketClient):
     def __init__(
@@ -12,10 +16,26 @@ class Listener(SXTWebSocketClient):
         app_id: str = "647e8f23d15d890d5cc02700",
         token: str = "7f54749ef19aaf9966ed7a616982c016bda5dfba",
         app_name: str = "walle-ad",
-        app_version: str = "0.9.1"
+        app_version: str = "0.9.1",
+        connect_retry_interval: int = 3
     ):
-        super().__init__(user_id, seller_id, ws_uri, app_id, token, app_name, app_version)
+        super().__init__(user_id, seller_id, ws_uri, app_id, token, app_name, app_version, connect_retry_interval)
         self.sxt_id = sxt_id
+
+    def produce_new_msg(msg):
+        message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
+        payload = msg['data']['payload']['sixin_message']
+        message = {
+            "user_id": payload['sender_id'],
+            "last_msg_content": payload['content'],
+            "last_msg_ts": payload['created_at'],
+            "last_store_id": payload['store_id'],
+            "view_store_id": payload['store_id'],
+            "avatar": "",
+            "nickname": ""
+        }
+        publisher.publish("newMessageChannel", json.dumps(message, ensure_ascii=False))
+        print(f"notified consumer: {message_id}")
 
     async def handle_message(self, server_message):
         msg_type = server_message.get("type")
@@ -24,7 +44,7 @@ class Listener(SXTWebSocketClient):
             case 2:  # 服务器要求 ACK
                 await self.ws_send({"type": 130, "ack": server_message["seq"]})
                 if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG" and server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
-                    produce_new_msg(server_message)
+                    self.produce_new_msg(server_message)
             case 4:
                 await self.ws_send({"type": 132})
                 await self.ws_send({"type": 4})
@@ -52,14 +72,33 @@ class Listener(SXTWebSocketClient):
                 await asyncio.sleep(30)
                 await self.ws_send({"type": 4})
 
-async def start():
-    client = Listener(
-        app_id="647e8f23d15d890d5cc02700",
-        user_id="67bc150804f0000000000003",
-        seller_id="6698b21b3289650015d6f4df",
-        token="7f54749ef19aaf9966ed7a616982c016bda5dfba",
-        sxt_id="65000f210000000005000a45"  # sender_id of the account
-    )
-    await client.connect()
-
-asyncio.run(start())
+class LSXT(SXT):
+    def __init__(self, cookies=None):
+        super().__init__(cookies=cookies)
+        self.websocket_client = Listener(user_id=self.b_user_id, seller_id=self.seller_id, sxt_id=self.c_user_id)
+        self.websocket_client.attach(self)
+    
+    def start_background_loop(self, loop):
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+        # run_forever() 结束后，才会执行到这里
+        loop.run_until_complete(self.websocket_client.close())
+        print("WebSocket client closed.")
+        loop.close()
+        print("Background loop closed.")
+        
+    def stop_background_loop(self):
+        if self.loop:
+            self.loop.call_soon_threadsafe(self.loop.stop)
+            self.loop = None
+            print("Background loop stopped.")
+            self.thread.join()
+            print("后台线程已退出，ws loop结束。")
+        
+    def run(self) -> typing.NoReturn:
+        new_loop = asyncio.new_event_loop()
+        t = threading.Thread(target=self.start_background_loop, args=(new_loop,), daemon=True)
+        t.start()
+        self.loop = new_loop
+        self.thread = t
+        asyncio.run_coroutine_threadsafe(self.listen(), new_loop)

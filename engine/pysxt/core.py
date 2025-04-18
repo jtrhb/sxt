@@ -35,7 +35,8 @@ class SXTWebSocketClient:
         app_id: str = "647e8f23d15d890d5cc02700",
         token: str = "7f54749ef19aaf9966ed7a616982c016bda5dfba",
         app_name: str = "walle-ad",
-        app_version: str = "0.9.1"
+        app_version: str = "0.9.1",
+        connect_retry_interval: int = 3
     ):
         self.user_id = user_id
         self.seller_id = seller_id
@@ -44,24 +45,25 @@ class SXTWebSocketClient:
         self.token = token
         self.app_name = app_name
         self.app_version = app_version
-        self.seq = 0
-        self.websocket = None
+        self.connect_retry_interval = connect_retry_interval
         self.sxt = None
+        self.websocket = None
+        self.seq = 0
 
-    def attach(self, sxt: "SXT"):
+    def attach(self, sxt: "SXT") -> None:
         self.sxt = sxt
 
     async def increase_seq(self) -> int:
         self.seq += 1
         return self.seq
 
-    async def ws_send(self, data: dict):
+    async def ws_send(self, data: dict) -> None:
         if self.websocket:
             data["seq"] = await self.increase_seq()
             await self.websocket.send(json.dumps(data))
             logger.debug(f"> Sent: {data}")
 
-    async def handle_message(self, server_message: dict):
+    async def handle_message(self, server_message: dict) -> None:
         msg_type = server_message.get("type")
 
         match msg_type:
@@ -98,9 +100,9 @@ class SXTWebSocketClient:
                 await asyncio.sleep(30)
                 await self.ws_send({"type": 4})
             case _:
-                logger.warn(f"msg type: {msg_type} server message: {server_message}")
+                logger.warning(f"Unknown msg type: {msg_type} server message: {server_message}")
 
-    async def connect(self):
+    async def connect(self) -> typing.NoReturn:
         while True:
             try:
                 async with websockets.connect(self.ws_uri) as self.websocket:
@@ -119,15 +121,24 @@ class SXTWebSocketClient:
                         asyncio.create_task(self.handle_message(server_message))
 
             except websockets.exceptions.ConnectionClosed:
-                self.seq = 0
                 logger.debug("[Error] Connection closed, reconnecting in 3s...")
-                await asyncio.sleep(3)
+                self.seq = 0
+                await asyncio.sleep(self.connect_retry_interval)
+
+    async def close(self):
+        await self.websocket.close()
 
 
 class SXT:
-    def __init__(self, cookies: dict, platform: int = 1, contact_way="octopus", timeout: int = 60):
+    def __init__(
+        self,
+        cookies: dict,
+        platform: int = 1,
+        contact_way="octopus",
+        timeout: int = 60,
+        websocket_client_config: typing.Optional[dict] = None
+    ):
         self.base_url = "https://sxt.xiaohongshu.com/api-sxt/edith"
-        self.event_emitter = AsyncIOEventEmitter()
         self.headers = {
             "authority": "sxt.xiaohongshu.com",
             "accept": "application/json, text/plain, */*",
@@ -148,6 +159,8 @@ class SXT:
         self.platform = platform
         self.contact_way = contact_way
         self.timeout = timeout
+        self.websocket_client_config = websocket_client_config or {}
+        self.event_emitter = AsyncIOEventEmitter()
         self.client = httpx.AsyncClient(cookies=self.cookies, headers=self.headers, timeout=self.timeout)
         self.user_info = self.get_user_info()
         self.c_user_id = self.user_info["data"]["c_user_id"]
@@ -155,7 +168,8 @@ class SXT:
         self.account_no = self.user_info["data"]["account_no"]
         self.user_detail = self.get_user_detail(self.account_no)
         self.seller_id = self.user_detail["data"]["flow_user"]["cs_provider_id"]
-        self.websocket_client = SXTWebSocketClient(user_id=self.b_user_id, seller_id=self.seller_id)
+        self.websocket_client = SXTWebSocketClient(user_id=self.b_user_id, seller_id=self.seller_id,
+                                                   **self.websocket_client_config)
         self.websocket_client.attach(self)
 
     @classmethod
@@ -424,16 +438,17 @@ class SXT:
     async def send_card(self, receiver_id: str, card: str) -> dict:
         return await self.send(receiver_id, card, send_type.CARD)
 
-    async def listen(self) -> typing.NoReturn:
-        logger.info(f'[{self.user_detail["data"]["flow_user"]["status"]}] {self.user_detail["data"]["flow_user"]["name"]}')
-        logger.info("Message listening...")
-        await self.websocket_client.connect()
-
     def handle(self, message_type: str) -> typing.Callable[[typing.Callable], None]:
         def wrapper(f):
             self.event_emitter.on(message_type, f)
 
         return wrapper
+
+    async def listen(self) -> typing.NoReturn:
+        logger.info(
+            f'[{self.user_detail["data"]["flow_user"]["status"]}] {self.user_detail["data"]["flow_user"]["name"]}')
+        logger.info("Message listening...")
+        await self.websocket_client.connect()
 
     def run(self) -> typing.NoReturn:
         asyncio.run(self.listen())
