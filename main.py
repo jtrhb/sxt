@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 import json
 import asyncio
 from message_queue import ListenerCommandConsumer
@@ -43,28 +44,28 @@ def get_chats(is_active: str = "false", limit: str = "80", listener_id: str = 'd
     return response
 
 @app.post("/chat_messages")
-async def get_chat_messages(query: MessageList, listener_id: str = 'default'):
+async def get_chat_messages(query: MessageList):
     """获取具体聊天记录"""
-    response = await app.SXTS[listener_id].get_chat_messages(query.customer_user_id, query.limit)
+    response = await app.SXTS[query.listener_id].get_chat_messages(query.customer_user_id, query.limit)
     return JSONResponse(content = response)
 
 @app.post("/send_text")
-async def send_text(msg: SendMessage, listener_id: str = 'default'):
+async def send_text(msg: SendMessage):
     """发送文本消息"""
-    response = await app.SXTS[listener_id].send_text(msg.receiver_id, msg.content)
+    response = await app.SXTS[msg.listener_id].send_text(msg.receiver_id, msg.content)
     return response
 
 @app.post("/send_image")
-async def send_text(msg: SendMessage, listener_id: str = 'default'):
+async def send_text(msg: SendMessage):
     """发送文本消息"""
-    response = await app.SXTS[listener_id].send_image(msg.receiver_id, msg.content)
+    response = await app.SXTS[msg.listener_id].send_image(msg.receiver_id, msg.content)
     return response
 
 @app.post("/send_business_card")
-async def send_business_card(msg: SendMessage, listener_id: str = 'default'):
+async def send_business_card(msg: SendMessage):
     """发送名片"""
-    business_cards = await app.SXTS[listener_id].get_business_cards()
-    response = await app.SXTS[listener_id].send_card(
+    business_cards = await app.SXTS[msg.listener_id].get_business_cards()
+    response = await app.SXTS[msg.listener_id].send_card(
         msg.receiver_id,
         json.dumps({"type": "commercialBusinessCard", **business_cards["data"]["list"][0]})
     )
@@ -75,9 +76,22 @@ def read_chat(chat_user_id: str, listener_id: str = 'default'):
     """标记聊天为已读"""
     response = app.SXTS[listener_id].read_chat(chat_user_id)
     return response
-  
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    lcc = ListenerCommandConsumer(app)
+    print("Starting ListenerCommandConsumer...")
+    task = asyncio.create_task(lcc.start_listening())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+app.router.lifespan_context = lifespan
+
+
 if __name__ == "__main__":
     import uvicorn
-    lcc = ListenerCommandConsumer(app)
-    asyncio.run(lcc.start_listening())
     uvicorn.run(app, host="0.0.0.0", port=3333)

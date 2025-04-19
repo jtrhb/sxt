@@ -12,6 +12,7 @@ class Listener(SXTWebSocketClient):
         user_id: str,
         seller_id: str,
         sxt_id: str,
+        listener_id: str,
         ws_uri: str = "wss://zelda.xiaohongshu.com/websocketV2",
         app_id: str = "647e8f23d15d890d5cc02700",
         token: str = "7f54749ef19aaf9966ed7a616982c016bda5dfba",
@@ -21,8 +22,9 @@ class Listener(SXTWebSocketClient):
     ):
         super().__init__(user_id, seller_id, ws_uri, app_id, token, app_name, app_version, connect_retry_interval)
         self.sxt_id = sxt_id
+        self.listener_id = listener_id
 
-    def produce_new_msg(msg):
+    def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
         payload = msg['data']['payload']['sixin_message']
         message = {
@@ -31,6 +33,7 @@ class Listener(SXTWebSocketClient):
             "last_msg_ts": payload['created_at'],
             "last_store_id": payload['store_id'],
             "view_store_id": payload['store_id'],
+            "listener_id": self.listener_id,
             "avatar": "",
             "nickname": ""
         }
@@ -73,9 +76,10 @@ class Listener(SXTWebSocketClient):
                 await self.ws_send({"type": 4})
 
 class LSXT(SXT):
-    def __init__(self, cookies=None):
+    def __init__(self, listener_id: str, cookies=None):
         super().__init__(cookies=cookies)
-        self.websocket_client = Listener(user_id=self.b_user_id, seller_id=self.seller_id, sxt_id=self.c_user_id)
+        self.listener_id = listener_id
+        self.websocket_client = Listener(user_id=self.b_user_id, seller_id=self.seller_id, sxt_id=self.c_user_id, listener_id=self.listener_id)
         self.websocket_client.attach(self)
     
     def start_background_loop(self, loop):
