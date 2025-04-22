@@ -18,6 +18,10 @@ class SendMessage(BaseModel):
     content: str
     listener_id: str = None
     
+class SendBusinessCard(BaseModel):
+    receiver_id: str
+    listener_id: str = None
+    
 class MessageList(BaseModel):
     customer_user_id: str
     limit: str
@@ -62,7 +66,7 @@ async def send_text(msg: SendMessage):
     return response
 
 @app.post("/send_business_card")
-async def send_business_card(msg: SendMessage):
+async def send_business_card(msg: SendBusinessCard):
     """发送名片"""
     business_cards = await app.SXTS[msg.listener_id].get_business_cards()
     response = await app.SXTS[msg.listener_id].send_card(
