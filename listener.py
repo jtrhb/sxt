@@ -40,6 +40,15 @@ class Listener(SXTWebSocketClient):
         publisher.publish("newMessageChannel", json.dumps(message, ensure_ascii=False))
         print(f"notified consumer: {message_id}")
 
+    async def send_periodic_heartbeat(self):
+        while True:
+            try:
+                await self.ws_send({"type": 4})
+                await asyncio.sleep(30)
+            except Exception as e:
+                print(f"Error sending heartbeat: {e}")
+                break
+
     async def handle_message(self, server_message):
         msg_type = server_message.get("type")
 
@@ -50,16 +59,13 @@ class Listener(SXTWebSocketClient):
                     self.produce_new_msg(server_message)
             case 4:
                 await self.ws_send({"type": 132})
-                await self.ws_send({"type": 4})
+                # await self.ws_send({"type": 4})
             case 129:  # 服务器返回 secureKey
                 await self.ws_send({
                     "type": 10,
                     "topic": aes_ecb_encrypt(server_message["secureKey"], self.user_id),
                     "encrypt": True
                 })
-            case 132:  # 服务器心跳
-                await asyncio.sleep(60)
-                await self.ws_send({"type": 4})
             case 138:  # 服务器请求 userAgent & additionalInfo
                 await self.ws_send({
                     "type": 12,
@@ -72,8 +78,9 @@ class Listener(SXTWebSocketClient):
                     }
                 })
             case 140:
-                await asyncio.sleep(30)
-                await self.ws_send({"type": 4})
+                if not hasattr(self, "_heartbeat_task_started"):
+                    setattr(self, "_heartbeat_task_started", True)
+                    asyncio.create_task(self.send_periodic_heartbeat())
 
 class LSXT(SXT):
     def __init__(self, listener_id: str, cookies=None):
