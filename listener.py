@@ -55,8 +55,13 @@ class Listener(SXTWebSocketClient):
         match msg_type:
             case 2:  # 服务器要求 ACK
                 await self.ws_send({"type": 130, "ack": server_message["seq"]})
-                if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG" and server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
-                    self.produce_new_msg(server_message)
+                if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG":
+                    if server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
+                        self.produce_new_msg(server_message)
+                        return
+                    elif server_message['data']['payload']['sixin_message']['content'] == "微信联系～":
+                        server_message['data']['payload']['sixin_message']['sender_id'] = server_message['data']['payload']['sixin_message']['receiver_id']
+                        return
             case 4:
                 await self.ws_send({"type": 132})
                 # await self.ws_send({"type": 4})
