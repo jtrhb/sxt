@@ -96,12 +96,18 @@ class LSXT(SXT):
     
     def start_background_loop(self, loop):
         asyncio.set_event_loop(loop)
-        loop.run_forever()
-        # run_forever() 结束后，才会执行到这里
-        loop.run_until_complete(self.websocket_client.close())
-        print("WebSocket client closed.")
-        loop.close()
-        print("Background loop closed.")
+        try:
+            loop.run_forever()
+        finally:
+            # run_forever() 结束后，才会执行到这里
+            pending = asyncio.all_tasks(loop=loop)
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.run_until_complete(self.websocket_client.close())
+            print("WebSocket client closed.")
+            loop.close()
+            print("Background loop closed.")
         
     def stop_background_loop(self):
         if self.loop:
