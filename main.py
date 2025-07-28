@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import json
 import asyncio
+import random
 from message_queue import ListenerCommandConsumer
 
 app = FastAPI()
@@ -69,9 +70,12 @@ async def send_text(msg: SendMessage):
 async def send_business_card(msg: SendBusinessCard):
     """发送名片"""
     business_cards = await app.SXTS[msg.listener_id].get_business_cards()
+    # 随机选择一个名片
+    card_list = business_cards["data"]["list"]
+    selected_card = random.choice(card_list)
     response = await app.SXTS[msg.listener_id].send_card(
         msg.receiver_id,
-        json.dumps({"type": "commercialBusinessCard", **business_cards["data"]["list"][0]})
+        json.dumps({"type": "commercialBusinessCard", **selected_card})
     )
     return response
 
