@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from datetime import datetime
 import json
 import asyncio
 import random
@@ -84,6 +85,16 @@ def read_chat(chat_user_id: str, listener_id: str = 'default'):
     """标记聊天为已读"""
     response = app.SXTS[listener_id].read_chat(chat_user_id)
     return response
+
+@app.get("/listeners")
+def get_listeners():
+    """获取当前运行的listeners列表"""
+    listeners = list(app.SXTS.keys())
+    return {
+        "count": len(listeners),
+        "listeners": listeners,
+        "timestamp": datetime.now().isoformat()
+    }
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
