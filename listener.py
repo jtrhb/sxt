@@ -57,10 +57,10 @@ class Listener(SXTWebSocketClient):
                 await self.ws_send({"type": 130, "ack": server_message["seq"]})
                 if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG":
                     if server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
+                        content = server_message['data']['payload']['sixin_message']['content']
+                        if server_message['data']['payload']['sixin_message']['message_source'] == "ads_system":
+                            server_message['data']['payload']['sixin_message']['content'] = json.loads(content)["content"]
                         self.produce_new_msg(server_message)
-                        return
-                    elif server_message['data']['payload']['sixin_message']['content'] == "微信联系～":
-                        server_message['data']['payload']['sixin_message']['sender_id'] = server_message['data']['payload']['sixin_message']['receiver_id']
                         return
             case 4:
                 await self.ws_send({"type": 132})
