@@ -30,8 +30,8 @@ class ListenerCommandConsumer:
         try:
             stored_tokens = subscriber.hgetall(TOKEN_STORAGE_KEY)
             if stored_tokens:
-                # Redis返回的是bytes，需要解码
-                self.tokens = {k.decode('utf-8'): v.decode('utf-8') for k, v in stored_tokens.items()}
+                # decode_responses=True 时，直接就是字符串，不需要decode
+                self.tokens = stored_tokens  # 直接使用，不需要decode
                 print(f"📥 从Redis恢复了 {len(self.tokens)} 个tokens")
                 for listener_id in self.tokens.keys():
                     masked_token = f"{self.tokens[listener_id][:8]}***{self.tokens[listener_id][-4:]}"
@@ -335,7 +335,7 @@ class ListenerCommandConsumer:
             try:
                 redis_token = subscriber.hget(TOKEN_STORAGE_KEY, listener_id)
                 if redis_token:
-                    token = redis_token.decode('utf-8')
+                    token = redis_token  # 不需要decode
                     self.tokens[listener_id] = token  # 同步到本地缓存
             except Exception as e:
                 print(f"❌ 从Redis获取token失败: {e}")
@@ -349,9 +349,7 @@ class ListenerCommandConsumer:
             redis_count = len(redis_tokens)
             
             print(f"💾 Redis中存储的tokens ({redis_count} 个):")
-            for listener_id_bytes, token_bytes in redis_tokens.items():
-                listener_id = listener_id_bytes.decode('utf-8')
-                token = token_bytes.decode('utf-8')
+            for listener_id, token in redis_tokens.items():  # 直接使用，不需要decode
                 masked_token = f"{token[:8]}***{token[-4:]}"
                 running_status = "🟢" if listener_id in self.app.SXTS else "🔴"
                 print(f"  {listener_id}: {masked_token} {running_status}")

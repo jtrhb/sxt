@@ -24,14 +24,17 @@ class Listener(SXTWebSocketClient):
         super().__init__(user_id, seller_id, ws_uri, app_id, token, app_name, app_version, connect_retry_interval)
         self.sxt_id = sxt_id
         self.listener_id = listener_id
-        self._hb_interval = 60 * 3
+        self._hb_interval = 30
         self._hb_task = None
         self._hb_next_deadline = None
         
     async def ws_send(self, data: dict) -> None:
         if self.websocket:
-            data["seq"] = await self.increase_seq()
+            seq = await self.increase_seq()
+            if data["type"] != 4 and data["type"] != 132:
+                data["seq"] = seq
             await self.websocket.send(json.dumps(data))
+            # print(f"[Sent] {data}")
 
     def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
@@ -120,7 +123,8 @@ class Listener(SXTWebSocketClient):
                 })
             case 140:
                 self._hb_interval = 30
-                self._hb_next_deadline = time.time() + 1  # 尽快进入新周期
+                self._hb_next_deadline = time.time() + 30  # 尽快进入新周期
+                self._ensure_hb_task()
             case _:
                 # 委托给基类处理未知类型
                 await super().handle_message(server_message)
@@ -140,6 +144,7 @@ class Listener(SXTWebSocketClient):
                     while True:
                         response = await self.websocket.recv()
                         server_message = json.loads(response)
+                        # print(f"[Received] {server_message}")
                         asyncio.create_task(self.handle_message(server_message))
 
             except websockets.exceptions.ConnectionClosed:
