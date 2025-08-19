@@ -206,7 +206,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
-app = FastAPI(lifespan=lifespan)
+app.router.lifespan_context = lifespan
 
 
 if __name__ == "__main__":
