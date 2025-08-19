@@ -9,7 +9,31 @@ import random
 import time
 from message_queue import ListenerCommandConsumer
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时的操作
+    print("🚀 启动 SXT 应用...")
+    consumer = ListenerCommandConsumer(app)
+    
+    # 自动恢复之前存储的listeners
+    print("🔄 尝试自动恢复listeners...")
+    consumer.auto_recover_listeners()
+    
+    # 启动消息队列监听
+    task = asyncio.create_task(consumer.start_listening())
+    
+    yield
+    
+    # 关闭时的操作
+    print("🛑 关闭 SXT 应用...")
+    consumer.stop_listening()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(lifespan=lifespan)
 app.SXTS = {}
 cookies = {
     "access-token-sxt.xiaohongshu.com": "customer.sxt.AT-68c517483891070912775173wndbrtlvszckosbb"
@@ -181,32 +205,6 @@ def manual_recover():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"发送恢复命令失败: {str(e)}")
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 启动时的操作
-    print("🚀 启动 SXT 应用...")
-    consumer = ListenerCommandConsumer(app)
-    
-    # 自动恢复之前存储的listeners
-    print("🔄 尝试自动恢复listeners...")
-    consumer.auto_recover_listeners()
-    
-    # 启动消息队列监听
-    task = asyncio.create_task(consumer.start_listening())
-    
-    yield
-    
-    # 关闭时的操作
-    print("🛑 关闭 SXT 应用...")
-    consumer.stop_listening()
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-
-app.router.lifespan_context = lifespan
 
 
 if __name__ == "__main__":
