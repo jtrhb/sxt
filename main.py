@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import asyncio
 import random
+import time
 from message_queue import ListenerCommandConsumer
 
 app = FastAPI()
@@ -90,25 +91,122 @@ def read_chat(chat_user_id: str, listener_id: str = 'default'):
 def get_listeners():
     """获取当前运行的listeners列表"""
     listeners = list(app.SXTS.keys())
+    # 获取token信息（如果ListenerCommandConsumer实例可访问的话）
+    listener_details = []
+    for listener_id in listeners:
+        listener_details.append({
+            "id": listener_id,
+            "status": "running",
+            "has_token": True  # 这里可以添加更详细的token检查逻辑
+        })
+    
     return {
         "count": len(listeners),
-        "listeners": listeners,
+        "listeners": listener_details,
         "timestamp": datetime.now().isoformat()
     }
 
+@app.get("/tokens/status")
+def get_token_status():
+    """获取token存储状态（需要访问ListenerCommandConsumer实例）"""
+    # 这个需要在lifespan中保存ListenerCommandConsumer实例的引用
+    return {
+        "message": "Token status endpoint - implementation needed",
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/tokens/redis")
+def get_redis_tokens():
+    """获取Redis中存储的所有tokens状态"""
+    try:
+        from redis_client import subscriber
+        
+        # 获取tokens
+        redis_tokens = subscriber.hgetall("sxt:tokens")
+        tokens_info = []
+        
+        for listener_id_bytes, token_bytes in redis_tokens.items():
+            listener_id = listener_id_bytes.decode('utf-8')
+            token = token_bytes.decode('utf-8')
+            masked_token = f"{token[:8]}***{token[-4:]}"
+            
+            # 检查是否正在运行
+            is_running = listener_id in app.SXTS
+            
+            tokens_info.append({
+                "listener_id": listener_id,
+                "token_masked": masked_token,
+                "is_running": is_running,
+                "status": "running" if is_running else "stopped"
+            })
+        
+        # 获取状态信息
+        try:
+            status_info = subscriber.hgetall("sxt:listener_status")
+            status_dict = {}
+            for k, v in status_info.items():
+                status_dict[k.decode('utf-8')] = json.loads(v.decode('utf-8'))
+        except:
+            status_dict = {}
+        
+        return {
+            "total_stored": len(redis_tokens),
+            "running_count": len(app.SXTS),
+            "tokens": tokens_info,
+            "status": status_dict,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取Redis tokens失败: {str(e)}")
+
+@app.post("/recover")
+def manual_recover():
+    """手动触发恢复所有存储的listeners"""
+    try:
+        # 发送恢复命令
+        recover_message = {
+            "command": "recover",
+            "listener_id": "system",  # 系统命令
+            "timestamp": time.time()
+        }
+        
+        from redis_client import publisher
+        publisher.publish("listenerCommandChannel", json.dumps(recover_message, ensure_ascii=False))
+        
+        return {
+            "message": "已发送恢复命令",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发送恢复命令失败: {str(e)}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    lcc = ListenerCommandConsumer(app)
-    print("Starting ListenerCommandConsumer...")
-    task = asyncio.create_task(lcc.start_listening())
+    # 启动时的操作
+    print("🚀 启动 SXT 应用...")
+    consumer = ListenerCommandConsumer(app)
+    
+    # 自动恢复之前存储的listeners
+    print("🔄 尝试自动恢复listeners...")
+    consumer.auto_recover_listeners()
+    
+    # 启动消息队列监听
+    task = asyncio.create_task(consumer.start_listening())
+    
     yield
+    
+    # 关闭时的操作
+    print("🛑 关闭 SXT 应用...")
+    consumer.stop_listening()
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
 
-app.router.lifespan_context = lifespan
+app = FastAPI(lifespan=lifespan)
 
 
 if __name__ == "__main__":
