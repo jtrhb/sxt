@@ -18,7 +18,7 @@ class Listener(SXTWebSocketClient):
         app_id: str = "647e8f23d15d890d5cc02700",
         token: str = "7f54749ef19aaf9966ed7a616982c016bda5dfba",
         app_name: str = "walle-ad",
-        app_version: str = "0.21.0",
+        app_version: str = "0.44.2",
         connect_retry_interval: int = 3
     ):
         super().__init__(user_id, seller_id, ws_uri, app_id, token, app_name, app_version, connect_retry_interval)
