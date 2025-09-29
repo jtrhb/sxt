@@ -36,6 +36,12 @@ class Listener(SXTWebSocketClient):
             await self.websocket.send(json.dumps(data))
             # print(f"[Sent] {data}")
 
+    async def close(self):
+        ws = getattr(self, "websocket", None)
+        if ws is None:
+            return
+        await ws.close()
+
     def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
         payload = msg['data']['payload']['sixin_message']
@@ -142,9 +148,9 @@ class Listener(SXTWebSocketClient):
                     })
 
                     while True:
-                        response = await self.websocket.recv()
+                        response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
                         server_message = json.loads(response)
-                        # print(f"[Received] {server_message}")
+                        print(f"[Received] {server_message}")
                         asyncio.create_task(self.handle_message(server_message))
 
             except websockets.exceptions.ConnectionClosed:
