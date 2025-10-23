@@ -318,9 +318,6 @@ class ListenerCommandConsumer:
                 # ✅ 注册实例（获得锁后才注册）
                 await self._register_instance()
                 
-                # ✅ 注册实例
-                await self._register_instance()
-                
                 # 启动锁续期任务
                 renew_task = asyncio.create_task(self._renew_lock())
                 

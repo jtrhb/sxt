@@ -22,14 +22,24 @@ async def lifespan(app: FastAPI):
     # 启动消息队列监听（会在获得锁后自动接管 listeners）
     task = asyncio.create_task(consumer.start_listening())
     
-    # ⚠️ 不在这里调用 auto_recover_listeners()
-    # 因为需要等待获得锁后才能启动 listeners
-    # _takeover_listeners() 会在 start_listening() 获得锁后自动调用
+    # ✅ 延迟自动恢复任务（90秒后执行，作为备用机制）
+    # 如果 start_listening() 已经通过 _takeover_listeners() 启动了所有 listeners，
+    # 这个任务会跳过已运行的 listeners
+    async def delayed_recover():
+        await asyncio.sleep(90)
+        if consumer.lock_acquired:
+            print("🔄 延迟自动恢复检查...")
+            await consumer.auto_recover_listeners()
+        else:
+            print("⚠️ 未获得锁，跳过延迟恢复")
+    
+    recovery_task = asyncio.create_task(delayed_recover())
     
     yield
     
     # 关闭时的操作
     print("🛑 关闭 SXT 应用...")
+    recovery_task.cancel()
     await consumer.stop_listening()
     task.cancel()
     try:
