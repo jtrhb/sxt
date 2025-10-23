@@ -10,38 +10,38 @@ import time
 import os
 from message_queue import ListenerCommandConsumer
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     # 启动时的操作
-#     print("🚀 启动 SXT 应用...")
-#     consumer = ListenerCommandConsumer(app)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时的操作
+    print("🚀 启动 SXT 应用...")
+    consumer = ListenerCommandConsumer(app)
     
-#     # 异步加载tokens
-#     await consumer._load_tokens_from_redis()
+    # 异步加载tokens
+    await consumer._load_tokens_from_redis()
     
-#     # 启动消息队列监听
-#     task = asyncio.create_task(consumer.start_listening())
+    # 启动消息队列监听
+    task = asyncio.create_task(consumer.start_listening())
     
-#     # 等待订阅建立
-#     await asyncio.sleep(0.5)
+    # 等待订阅建立
+    await asyncio.sleep(0.5)
     
-#     # 自动恢复之前存储的listeners（异步）
-#     print("🔄 尝试自动恢复listeners...")
-#     await consumer.auto_recover_listeners()
+    # 自动恢复之前存储的listeners（异步）
+    print("🔄 尝试自动恢复listeners...")
+    await consumer.auto_recover_listeners()
     
-#     yield
+    yield
     
-#     # 关闭时的操作
-#     print("🛑 关闭 SXT 应用...")
-#     consumer.stop_listening()
-#     task.cancel()
-#     try:
-#         await task
-#     except asyncio.CancelledError:
-#         pass
+    # 关闭时的操作
+    print("🛑 关闭 SXT 应用...")
+    consumer.stop_listening()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
-# app = FastAPI(lifespan=lifespan)
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
+# app = FastAPI()
 app.SXTS = {}
 cookies = {
     "access-token-sxt.xiaohongshu.com": "customer.sxt.AT-68c517483891070912775173wndbrtlvszckosbb"
