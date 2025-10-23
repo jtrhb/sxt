@@ -59,6 +59,10 @@ class MessageList(BaseModel):
     customer_user_id: str
     limit: str
     listener_id: str = None
+    
+class TestWebSocket(BaseModel):
+    token: str
+    listener_id: str = "test"
 
 # @app.get("/info")
 # def get_info():
@@ -212,6 +216,158 @@ def manual_recover():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"发送恢复命令失败: {str(e)}")
 
+@app.post("/test/websocket")
+async def test_websocket_connection(data: TestWebSocket):
+    """测试WebSocket连接（带完整请求头）"""
+    import os
+    import websockets
+    from websockets_proxy import Proxy, proxy_connect
+    
+    proxy_url = os.getenv("SOCKS_PROXY_URL", "socks5://14ac82adf87db:dec6b3a5a6@194.153.253.190:12324")
+    ws_uri = "wss://zelda.xiaohongshu.com/websocketV2"
+    use_proxy = os.getenv("USE_PROXY", "true").lower() == "true"
+    app_id = "647e8f23d15d890d5cc02700"
+    
+    result = {
+        "proxy_enabled": use_proxy,
+        "proxy_url": proxy_url.split('@')[1] if '@' in proxy_url else "not set",
+        "target": ws_uri,
+        "listener_id": data.listener_id,
+        "token_provided": bool(data.token),
+        "token_masked": f"{data.token[:8]}***{data.token[-4:]}" if data.token else "none",
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    try:
+        if use_proxy:
+            proxy = Proxy.from_url(proxy_url)
+            result["proxy_object"] = "created"
+            
+            print(f"🧪 测试代理WebSocket连接...")
+            print(f"📍 代理: {proxy_url.split('@')[1]}")
+            print(f"🎯 目标: {ws_uri}")
+            print(f"🔑 Token: {data.token[:8]}...{data.token[-4:]}")
+            
+            start_time = time.time()
+            # 使用与listener.py相同的连接方式
+            async with proxy_connect(ws_uri, proxy=proxy, open_timeout=15) as websocket:
+                connect_time = time.time() - start_time
+                result["status"] = "connected"
+                result["connect_time_ms"] = round(connect_time * 1000, 2)
+                result["websocket_open"] = websocket.open
+                
+                print(f"✅ WebSocket连接成功 ({result['connect_time_ms']}ms)")
+                
+                # 发送认证消息（与listener.py完全相同）
+                auth_message = {
+                    "type": 1,
+                    "token": data.token,
+                    "appId": app_id
+                }
+                await websocket.send(json.dumps(auth_message))
+                result["auth_sent"] = True
+                result["auth_message"] = auth_message
+                print(f"📤 已发送认证消息")
+                
+                # 接收服务器响应（等待最多10秒）
+                messages_received = []
+                try:
+                    for i in range(5):  # 最多接收5条消息
+                        response = await asyncio.wait_for(websocket.recv(), timeout=10)
+                        message = json.loads(response)
+                        messages_received.append(message)
+                        print(f"📨 收到消息 #{i+1}: {message}")
+                        
+                        # 如果收到需要ACK的消息
+                        if message.get("type") == 2:
+                            ack_msg = {"type": 130, "ack": message["seq"]}
+                            await websocket.send(json.dumps(ack_msg))
+                            print(f"📤 发送ACK: seq={message['seq']}")
+                        # 如果收到认证成功的消息，可以结束测试
+                        if message.get("type") in [129, 138, 140]:
+                            print(f"✅ 收到服务器响应: type={message.get('type')}")
+                            break
+                            
+                except asyncio.TimeoutError:
+                    print(f"⏱️ 10秒内未收到更多消息")
+                
+                result["status"] = "success"
+                result["messages_received"] = len(messages_received)
+                result["server_responses"] = messages_received
+                result["message"] = f"✅ 测试成功！连接正常，收到 {len(messages_received)} 条消息"
+                
+        else:
+            # 直连测试
+            print(f"🧪 测试直连WebSocket...")
+            start_time = time.time()
+            
+            async with websockets.connect(ws_uri, open_timeout=15) as websocket:
+                connect_time = time.time() - start_time
+                result["status"] = "connected"
+                result["connect_time_ms"] = round(connect_time * 1000, 2)
+                
+                # 发送认证
+                auth_message = {
+                    "type": 1,
+                    "token": data.token,
+                    "appId": app_id
+                }
+                await websocket.send(json.dumps(auth_message))
+                result["auth_sent"] = True
+                
+                # 接收响应
+                messages_received = []
+                try:
+                    for i in range(5):
+                        response = await asyncio.wait_for(websocket.recv(), timeout=10)
+                        message = json.loads(response)
+                        messages_received.append(message)
+                        
+                        if message.get("type") == 2:
+                            ack_msg = {"type": 130, "ack": message["seq"]}
+                            await websocket.send(json.dumps(ack_msg))
+                        
+                        if message.get("type") in [129, 138, 140]:
+                            break
+                except asyncio.TimeoutError:
+                    pass
+                
+                result["status"] = "success"
+                result["messages_received"] = len(messages_received)
+                result["server_responses"] = messages_received
+                result["message"] = f"✅ 直连测试成功！收到 {len(messages_received)} 条消息"
+    except ConnectionRefusedError as e:
+        result["status"] = "failed"
+        result["error"] = "Connection refused"
+        result["error_detail"] = str(e)
+        result["message"] = "❌ 代理服务器拒绝连接"
+        print(f"❌ 连接被拒绝: {e}")
+        
+    except asyncio.TimeoutError:
+        result["status"] = "failed"
+        result["error"] = "Timeout"
+        result["message"] = "❌ 连接超时（15秒）"
+        print(f"❌ 连接超时")
+        
+    except OSError as e:
+        result["status"] = "failed"
+        result["error"] = f"OSError: {e.errno if hasattr(e, 'errno') else 'N/A'}"
+        result["error_detail"] = str(e)
+        result["message"] = f"❌ 网络错误: {e}"
+        print(f"❌ OSError: {e}")
+        
+    except Exception as e:
+        result["status"] = "failed"
+        result["error"] = type(e).__name__
+        result["error_detail"] = str(e)
+        result["message"] = f"❌ 未知错误: {type(e).__name__}"
+        import traceback
+        result["traceback"] = traceback.format_exc()
+        print(f"❌ 未知错误: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return result
 
 if __name__ == "__main__":
     import uvicorn
