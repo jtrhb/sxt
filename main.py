@@ -7,6 +7,7 @@ import json
 import asyncio
 import random
 import time
+import os
 from message_queue import ListenerCommandConsumer
 
 @asynccontextmanager
@@ -371,4 +372,4 @@ async def test_websocket_connection(data: TestWebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=3333)
+    uvicorn.run(app, host="0.0.0.0", port=os.environ.get("PORT", 3333))
