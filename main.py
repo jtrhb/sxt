@@ -79,6 +79,10 @@ class TestWebSocket(BaseModel):
 #     response = sxt.has_new()
 #     return response
 
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
 @app.get("/chats")
 def get_chats(is_active: str = "false", limit: str = "80", listener_id: str = 'default'):
     """获取聊天列表"""
