@@ -308,31 +308,31 @@ class ListenerCommandConsumer:
                     reconnect_attempts += 1
                     current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
                     lock_ttl = await subscriber.ttl(CONSUMER_LOCK_KEY)
-                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}, 锁剩余TTL: {lock_ttl}秒 (尝试 {reconnect_attempts}/{max_reconnect_attempts})")
+                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}, 锁剩余TTL: {lock_ttl}秒 (尝试 {reconnect_attempts}/{max_reconnect_attempts})", flush=True)
                     
                     # 检查持有者是否还活着
                     if current_holder:
                         instance_key = f"sxt:instances:{current_holder}"
                         instance_exists = await subscriber.exists(instance_key)
                         if not instance_exists:
-                            print(f"⚠️ 持有者 {current_holder} 已失效但锁未释放")
+                            print(f"⚠️ 持有者 {current_holder} 已失效但锁未释放", flush=True)
                             # 如果锁 TTL 还很长，主动删除死锁
                             if lock_ttl > 10:
-                                print(f"🔓 主动删除死锁 (TTL={lock_ttl}秒)")
+                                print(f"🔓 主动删除死锁 (TTL={lock_ttl}秒)", flush=True)
                                 await subscriber.delete(CONSUMER_LOCK_KEY)
                                 # 立即重试
                                 await asyncio.sleep(1)
                                 continue
                             else:
-                                print(f"⏱️ 锁即将过期 ({lock_ttl}秒)，等待自动过期...")
+                                print(f"⏱️ 锁即将过期 ({lock_ttl}秒)，等待自动过期...", flush=True)
                     
                     # 等待2秒后重试（缩短等待时间）
-                    print(f"💤 等待 2 秒后重试获取锁...")
+                    print(f"💤 等待 2 秒后重试获取锁...", flush=True)
                     await asyncio.sleep(2)
                     continue
                 
                 self.lock_acquired = True
-                print(f"✅ 实例 {self.instance_id} 获得监听权限")
+                print(f"✅ 实例 {self.instance_id} 获得监听权限", flush=True)
                 
                 # ✅ 注册实例（获得锁后才注册）
                 await self._register_instance()

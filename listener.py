@@ -84,19 +84,19 @@ class Listener(SXTWebSocketClient):
             print(f"💗 心跳任务已启动，间隔: {self._hb_interval}秒")
 
     async def _heartbeat_loop(self):
-        print(f"💗 心跳循环开始，间隔: {self._hb_interval}秒")
+        # print(f"💗 心跳循环开始，间隔: {self._hb_interval}秒")  # 减少日志输出
         while self.websocket:
             try:
                 now = time.time()
                 if self._hb_next_deadline is None or now >= self._hb_next_deadline:
-                    print(f"💓 发送心跳包 type=4")
+                    # print(f"💓 发送心跳包 type=4")  # 高频日志，注释掉
                     await self.ws_send({"type": 4})
                     self._hb_next_deadline = now + self._hb_interval
                 await asyncio.sleep(1)
             except Exception as e:
                 print(f"❌ 心跳循环异常: {e}")
                 break
-        print("💔 心跳循环结束")
+        # print("💔 心跳循环结束")  # 减少日志输出
 
     async def handle_message(self, server_message):
         msg_type = server_message.get("type")
@@ -112,7 +112,7 @@ class Listener(SXTWebSocketClient):
                         self.produce_new_msg(server_message)
                         return
             case 4:
-                print("💗 收到服务器心跳 type=4")
+                # print("💗 收到服务器心跳 type=4")  # 高频日志，注释掉
                 await self.ws_send({"type": 132})
                 self._ensure_hb_task()
             case 8:  # 心跳超时，服务器要求重连
@@ -142,8 +142,9 @@ class Listener(SXTWebSocketClient):
                     "encrypt": True
                 })
             case 132:
-                print("💚 收到心跳响应 type=132")
+                # print("💚 收到心跳响应 type=132")  # 高频日志，注释掉
                 # 不修改 deadline，让心跳循环继续按计划运行
+                pass
             case 138:  # 服务器请求 userAgent & additionalInfo
                 await self.ws_send({
                     "type": 12,

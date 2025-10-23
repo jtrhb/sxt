@@ -12,10 +12,11 @@ def set_instance_id(instance_id: str):
     INSTANCE_ID = instance_id
 
 def log(message: str):
-    """打印带实例ID前缀的日志"""
+    """打印带实例ID前缀的日志，并强制刷新输出"""
     if INSTANCE_ID:
         # 只取实例ID的后8位，避免日志太长
         short_id = INSTANCE_ID.split('-')[-1][:8]
-        print(f"[{short_id}] {message}")
+        print(f"[{short_id}] {message}", flush=True)
     else:
+        print(message, flush=True)
         print(message)

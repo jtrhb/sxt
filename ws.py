@@ -39,7 +39,7 @@ class WebSocketClient:
         if self.websocket:
             data["seq"] = await self.increase_seq()
             await self.websocket.send(json.dumps(data))
-            logging.info(f"> Sent: {data}\n")
+            # logging.info(f"> Sent: {data}\n")  # 高频日志，注释掉
 
     async def ack(self, ack_seq):
         await self.ws_send({"type": 130, "ack": ack_seq})
@@ -97,7 +97,7 @@ class WebSocketClient:
                     while True:
                         response = await ws.recv()
                         server_message = json.loads(response)
-                        logging.info(f"< Received: {json.dumps(server_message, ensure_ascii=False)}\n")
+                        # logging.info(f"< Received: {json.dumps(server_message, ensure_ascii=False)}\n")  # 高频日志，注释掉
                         asyncio.create_task(self.handle_message(server_message))
 
             except websockets.exceptions.ConnectionClosed:

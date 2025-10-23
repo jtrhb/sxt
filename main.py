@@ -13,7 +13,7 @@ from message_queue import ListenerCommandConsumer
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时的操作
-    print("🚀 启动 SXT 应用...")
+    print("🚀 启动 SXT 应用...", flush=True)
     consumer = ListenerCommandConsumer(app)
     
     # 异步加载tokens
@@ -28,17 +28,17 @@ async def lifespan(app: FastAPI):
     async def delayed_recover():
         await asyncio.sleep(90)
         if consumer.lock_acquired:
-            print("🔄 延迟自动恢复检查...")
+            print("🔄 延迟自动恢复检查...", flush=True)
             await consumer.auto_recover_listeners()
         else:
-            print("⚠️ 未获得锁，跳过延迟恢复")
+            print("⚠️ 未获得锁，跳过延迟恢复", flush=True)
     
     recovery_task = asyncio.create_task(delayed_recover())
     
     yield
     
     # 关闭时的操作
-    print("🛑 关闭 SXT 应用...")
+    print("🛑 关闭 SXT 应用...", flush=True)
     recovery_task.cancel()
     await consumer.stop_listening()
     task.cancel()
