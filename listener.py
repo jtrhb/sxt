@@ -170,10 +170,18 @@ class Listener(SXTWebSocketClient):
         while True:
             try:
                 proxy = Proxy.from_url(proxy_url)
-                print(f"[Connecting] 使用代理连接 (尝试 #{retry_count + 1})")
+                print(f"[Connecting] 🔐 使用代理连接 (尝试 #{retry_count + 1})")
+                print(f"[Proxy] 代理地址: {proxy_url.split('@')[1] if '@' in proxy_url else proxy_url}")
                 
-                async with proxy_connect(self.ws_uri, proxy=proxy) as self.websocket:
-                    print("[Connected] WebSocket connection established via proxy.")
+                start_time = time.time()
+                async with proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15) as self.websocket:
+                    connect_time = time.time() - start_time
+                    print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
+                    
+                    # 设置连接就绪标志
+                    if hasattr(self.sxt, 'connection_ready'):
+                        self.sxt.connection_ready = True
+                    
                     retry_count = 0  # 连接成功，重置计数器
 
                     # 发送登录消息
@@ -189,47 +197,19 @@ class Listener(SXTWebSocketClient):
                         server_message = json.loads(response)
                         print(f"[Received] {server_message}")
                         
-                        # 如果是需要ACK的消息，立即发送ACK（在处理之前）
                         if server_message.get("type") == 2:
                             await self.ws_send({"type": 130, "ack": server_message["seq"]})
                         
-                        # 然后异步处理消息内容
                         asyncio.create_task(self.handle_message(server_message))
 
-            except websockets.exceptions.ConnectionClosed as e:
-                retry_count += 1
-                delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
-                print(f"[Error] WebSocket连接关闭: {e}, {delay}秒后重连...")
-                self.seq = 0
-                await asyncio.sleep(delay)
-                
-            except asyncio.TimeoutError:
-                retry_count += 1
-                delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
-                print(f"[Error] 接收消息超时, {delay}秒后重连...")
-                self.seq = 0
-                await asyncio.sleep(delay)
-                
-            except websockets.exceptions.InvalidStatusCode as e:
-                retry_count += 1
-                delay = min(self.connect_retry_interval * (retry_count + 1), max_retry_delay)
-                print(f"[Error] 无效的HTTP状态码: {e}, {delay}秒后重连...")
-                self.seq = 0
-                await asyncio.sleep(delay)
-                
-            except OSError as e:
-                retry_count += 1
-                delay = min(self.connect_retry_interval * (retry_count + 1), max_retry_delay)
-                print(f"[Error] 网络/代理错误: {e}, {delay}秒后重连...")
-                self.seq = 0
-                await asyncio.sleep(delay)
-                
             except Exception as e:
+                # 连接失败，重置标志
+                if hasattr(self.sxt, 'connection_ready'):
+                    self.sxt.connection_ready = False
+                
                 retry_count += 1
                 delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
-                print(f"[Error] 未预期的错误: {type(e).__name__}: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"[Error] 连接错误: {e}, {delay}秒后重连...")
                 self.seq = 0
                 await asyncio.sleep(delay)
 
@@ -237,8 +217,14 @@ class LSXT(SXT):
     def __init__(self, listener_id: str, cookies=None):
         super().__init__(cookies=cookies)
         self.listener_id = listener_id
-        self.websocket_client = Listener(user_id=self.b_user_id, seller_id=self.seller_id, sxt_id=self.c_user_id, listener_id=self.listener_id)
+        self.websocket_client = Listener(
+            user_id=self.b_user_id, 
+            seller_id=self.seller_id, 
+            sxt_id=self.c_user_id, 
+            listener_id=self.listener_id
+        )
         self.websocket_client.attach(self)
+        self.connection_ready = False  # 添加连接状态标志
     
     def start_background_loop(self, loop):
         asyncio.set_event_loop(loop)
@@ -269,4 +255,8 @@ class LSXT(SXT):
         t.start()
         self.loop = new_loop
         self.thread = t
+        
+        # 启动WebSocket连接
         asyncio.run_coroutine_threadsafe(self.listen(), new_loop)
+        
+        print(f"🔄 Listener {self.listener_id} 后台线程已启动，WebSocket连接中...")
