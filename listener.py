@@ -5,7 +5,10 @@ import time
 import typing
 import threading
 import websockets
+from websockets_proxy import Proxy, proxy_connect
 from redis_client import publisher
+
+proxy_url = "socks5://14ac82adf87db:dec6b3a5a6@194.153.253.190:12324"
 
 class Listener(SXTWebSocketClient):
     def __init__(
@@ -27,20 +30,32 @@ class Listener(SXTWebSocketClient):
         self._hb_interval = 30
         self._hb_task = None
         self._hb_next_deadline = None
-        
+    
     async def ws_send(self, data: dict) -> None:
         if self.websocket:
+            # ACK消息(type=130)不需要添加seq
+            if data["type"] == 130:
+                await self.websocket.send(json.dumps(data))
+                print(f"[Sent ACK] ack={data.get('ack')}")
+                return
+            
+            # 心跳消息也不需要seq
+            if data["type"] in [4, 132]:
+                await self.websocket.send(json.dumps(data))
+                return
+            
+            # 其他消息需要seq
             seq = await self.increase_seq()
-            if data["type"] != 4 and data["type"] != 132:
-                data["seq"] = seq
+            data["seq"] = seq
             await self.websocket.send(json.dumps(data))
-            # print(f"[Sent] {data}")
+            print(f"[Sent] type={data['type']}, seq={seq}")
 
     async def close(self):
         ws = getattr(self, "websocket", None)
         if ws is None:
             return
         await ws.close()
+        self.websocket = None
 
     def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
@@ -60,22 +75,31 @@ class Listener(SXTWebSocketClient):
 
     def _ensure_hb_task(self):
         if self._hb_task is None or self._hb_task.done():
+            if self._hb_task is not None and self._hb_task.done():
+                print("🔄 心跳任务已结束，重新启动")
             self._hb_task = asyncio.create_task(self._heartbeat_loop())
+            print(f"💗 心跳任务已启动，间隔: {self._hb_interval}秒")
 
     async def _heartbeat_loop(self):
+        print(f"💗 心跳循环开始，间隔: {self._hb_interval}秒")
         while self.websocket:
-            now = time.time()
-            if self._hb_next_deadline is None or now >= self._hb_next_deadline:
-                await self.ws_send({"type": 4})
-                self._hb_next_deadline = now + self._hb_interval
-            await asyncio.sleep(1)
+            try:
+                now = time.time()
+                if self._hb_next_deadline is None or now >= self._hb_next_deadline:
+                    print(f"💓 发送心跳包 type=4")
+                    await self.ws_send({"type": 4})
+                    self._hb_next_deadline = now + self._hb_interval
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"❌ 心跳循环异常: {e}")
+                break
+        print("💔 心跳循环结束")
 
     async def handle_message(self, server_message):
         msg_type = server_message.get("type")
 
         match msg_type:
-            case 2:  # 服务器要求 ACK
-                await self.ws_send({"type": 130, "ack": server_message["seq"]})
+            case 2:  # 服务器要求 ACK - ACK已经在connect()中发送了
                 if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG":
                     if server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
                         content = server_message['data']['payload']['sixin_message']['content']
@@ -85,6 +109,7 @@ class Listener(SXTWebSocketClient):
                         self.produce_new_msg(server_message)
                         return
             case 4:
+                print("💗 收到服务器心跳 type=4")
                 await self.ws_send({"type": 132})
                 self._ensure_hb_task()
             case 8:  # 心跳超时，服务器要求重连
@@ -114,8 +139,8 @@ class Listener(SXTWebSocketClient):
                     "encrypt": True
                 })
             case 132:
-                # 服务器确认；刷新 deadline，但不立即 sleep
-                self._hb_next_deadline = time.time() + self._hb_interval
+                print("💚 收到心跳响应 type=132")
+                # 不修改 deadline，让心跳循环继续按计划运行
             case 138:  # 服务器请求 userAgent & additionalInfo
                 await self.ws_send({
                     "type": 12,
@@ -128,35 +153,86 @@ class Listener(SXTWebSocketClient):
                     }
                 })
             case 140:
+                old_interval = self._hb_interval
                 self._hb_interval = 30
-                self._hb_next_deadline = time.time() + 30  # 尽快进入新周期
-                self._ensure_hb_task()
+                print(f"📋 收到type=140，调整心跳间隔: {old_interval}s → {self._hb_interval}s")
+                self._hb_next_deadline = time.time() + 1  # 1秒后发送
+                self._ensure_hb_task()  # 确保心跳任务在运行
+                print(f"⏰ 心跳将在1秒后发送，然后每{self._hb_interval}秒一次")
             case _:
                 # 委托给基类处理未知类型
                 await super().handle_message(server_message)
 
     async def connect(self) -> typing.NoReturn:
+        retry_count = 0
+        max_retry_delay = 60
+        
         while True:
             try:
-                async with websockets.connect(self.ws_uri) as self.websocket:
-                    print("[Connected] WebSocket connection established.")
+                proxy = Proxy.from_url(proxy_url)
+                print(f"[Connecting] 使用代理连接 (尝试 #{retry_count + 1})")
+                
+                async with proxy_connect(self.ws_uri, proxy=proxy) as self.websocket:
+                    print("[Connected] WebSocket connection established via proxy.")
+                    retry_count = 0  # 连接成功，重置计数器
 
+                    # 发送登录消息
                     await self.ws_send({
                         "type": 1,
                         "token": self.token,
                         "appId": self.app_id
                     })
 
+                    # 接收和处理消息
                     while True:
                         response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
                         server_message = json.loads(response)
                         print(f"[Received] {server_message}")
+                        
+                        # 如果是需要ACK的消息，立即发送ACK（在处理之前）
+                        if server_message.get("type") == 2:
+                            await self.ws_send({"type": 130, "ack": server_message["seq"]})
+                        
+                        # 然后异步处理消息内容
                         asyncio.create_task(self.handle_message(server_message))
 
-            except websockets.exceptions.ConnectionClosed:
-                print("[Error] Connection closed, reconnecting in 3s...")
+            except websockets.exceptions.ConnectionClosed as e:
+                retry_count += 1
+                delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
+                print(f"[Error] WebSocket连接关闭: {e}, {delay}秒后重连...")
                 self.seq = 0
-                await asyncio.sleep(self.connect_retry_interval)
+                await asyncio.sleep(delay)
+                
+            except asyncio.TimeoutError:
+                retry_count += 1
+                delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
+                print(f"[Error] 接收消息超时, {delay}秒后重连...")
+                self.seq = 0
+                await asyncio.sleep(delay)
+                
+            except websockets.exceptions.InvalidStatusCode as e:
+                retry_count += 1
+                delay = min(self.connect_retry_interval * (retry_count + 1), max_retry_delay)
+                print(f"[Error] 无效的HTTP状态码: {e}, {delay}秒后重连...")
+                self.seq = 0
+                await asyncio.sleep(delay)
+                
+            except OSError as e:
+                retry_count += 1
+                delay = min(self.connect_retry_interval * (retry_count + 1), max_retry_delay)
+                print(f"[Error] 网络/代理错误: {e}, {delay}秒后重连...")
+                self.seq = 0
+                await asyncio.sleep(delay)
+                
+            except Exception as e:
+                retry_count += 1
+                delay = min(self.connect_retry_interval * retry_count, max_retry_delay)
+                print(f"[Error] 未预期的错误: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                self.seq = 0
+                await asyncio.sleep(delay)
+
 class LSXT(SXT):
     def __init__(self, listener_id: str, cookies=None):
         super().__init__(cookies=cookies)
