@@ -1,4 +1,4 @@
-import redis
+import redis.asyncio as redis
 from dotenv import load_dotenv
 import os
 from urllib.parse import urlparse

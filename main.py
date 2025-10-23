@@ -15,12 +15,18 @@ async def lifespan(app: FastAPI):
     print("🚀 启动 SXT 应用...")
     consumer = ListenerCommandConsumer(app)
     
-    # 自动恢复之前存储的listeners
-    print("🔄 尝试自动恢复listeners...")
-    consumer.auto_recover_listeners()
+    # 异步加载tokens
+    await consumer._load_tokens_from_redis()
     
     # 启动消息队列监听
     task = asyncio.create_task(consumer.start_listening())
+    
+    # 等待订阅建立
+    await asyncio.sleep(0.5)
+    
+    # 自动恢复之前存储的listeners（异步）
+    print("🔄 尝试自动恢复listeners...")
+    await consumer.auto_recover_listeners()
     
     yield
     
