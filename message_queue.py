@@ -601,7 +601,20 @@ class ListenerCommandConsumer:
         print(f"🛑 停止监听 (实例 {self.instance_id})")
         self.running = False
         
-        # ✅ 注销实例
+        # ✅ 停止所有运行中的 listeners
+        listeners_to_stop = list(self.app.SXTS.keys())
+        if listeners_to_stop:
+            print(f"🛑 停止 {len(listeners_to_stop)} 个运行中的 listeners...")
+            for listener_id in listeners_to_stop:
+                try:
+                    print(f"  🛑 停止 Listener {listener_id}...")
+                    self.app.SXTS[listener_id].stop_background_loop()
+                    del self.app.SXTS[listener_id]
+                except Exception as e:
+                    print(f"  ⚠️ 停止 Listener {listener_id} 时出错: {e}")
+            print(f"✅ 所有 listeners 已停止")
+        
+        # ✅ 注销实例（会释放所有权）
         await self._unregister_instance()
 
     async def restart_listener(self, listener_id, token=None, reason=None):
