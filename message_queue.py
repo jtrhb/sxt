@@ -290,7 +290,7 @@ class ListenerCommandConsumer:
         """实时监听并处理新消息（带分布式锁）"""
         self.running = True
         reconnect_attempts = 0
-        max_reconnect_attempts = 5
+        max_reconnect_attempts = 20  # 增加重试次数，每次等待2秒，最多40秒
         pubsub = None
         
         try:
@@ -305,20 +305,30 @@ class ListenerCommandConsumer:
                 
                 if not lock_acquired:
                     # 锁被其他实例持有
+                    reconnect_attempts += 1
                     current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
                     lock_ttl = await subscriber.ttl(CONSUMER_LOCK_KEY)
-                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}, 锁剩余TTL: {lock_ttl}秒")
+                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}, 锁剩余TTL: {lock_ttl}秒 (尝试 {reconnect_attempts}/{max_reconnect_attempts})")
                     
                     # 检查持有者是否还活着
                     if current_holder:
                         instance_key = f"sxt:instances:{current_holder}"
                         instance_exists = await subscriber.exists(instance_key)
                         if not instance_exists:
-                            print(f"⚠️ 持有者 {current_holder} 已失效但锁未释放，等待锁自动过期...")
+                            print(f"⚠️ 持有者 {current_holder} 已失效但锁未释放")
+                            # 如果锁 TTL 还很长，主动删除死锁
+                            if lock_ttl > 10:
+                                print(f"🔓 主动删除死锁 (TTL={lock_ttl}秒)")
+                                await subscriber.delete(CONSUMER_LOCK_KEY)
+                                # 立即重试
+                                await asyncio.sleep(1)
+                                continue
+                            else:
+                                print(f"⏱️ 锁即将过期 ({lock_ttl}秒)，等待自动过期...")
                     
-                    # 等待5秒后重试
-                    print(f"💤 等待 5 秒后重试获取锁 (尝试 {reconnect_attempts + 1}/{max_reconnect_attempts})...")
-                    await asyncio.sleep(5)
+                    # 等待2秒后重试（缩短等待时间）
+                    print(f"💤 等待 2 秒后重试获取锁...")
+                    await asyncio.sleep(2)
                     continue
                 
                 self.lock_acquired = True
