@@ -3,6 +3,12 @@ echo "项目文件列表："
 find engine
 
 echo "🚀 Starting API"
-uvicorn main:app --host 0.0.0.0 --port 3333
+
+# ✅ 使用Railway的PORT环境变量，本地默认3333
+PORT=${PORT:-3333}
+echo "📍 启动端口: $PORT"
+echo "🌍 环境: ${RAILWAY_ENVIRONMENT:-local}"
+
+uvicorn main:app --host 0.0.0.0 --port $PORT
 
 wait
