@@ -164,6 +164,7 @@ class Listener(SXTWebSocketClient):
                 await super().handle_message(server_message)
 
     async def connect(self) -> typing.NoReturn:
+        print("Starting WebSocket connection...")
         retry_count = 0
         max_retry_delay = 60
         
@@ -248,6 +249,13 @@ class LSXT(SXT):
             print("Background loop stopped.")
             self.thread.join()
             print("后台线程已退出，ws loop结束。")
+            
+    async def listen(self) -> typing.NoReturn:
+        await self.websocket_client.connect()
+        
+        print(
+            f'[{self.user_detail["data"]["flow_user"]["status"]}] {self.user_detail["data"]["flow_user"]["name"]}')
+        print("Message listening...")
         
     def run(self) -> typing.NoReturn:
         new_loop = asyncio.new_event_loop()
