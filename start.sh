@@ -6,4 +6,4 @@ PORT=${PORT:-3333}
 echo "📍 启动端口: $PORT"
 echo "🌍 环境: ${RAILWAY_ENVIRONMENT:-local}"
 
-uvicorn main:app --host 0.0.0.0 --port 3333
+uvicorn main:app --host 0.0.0.0 --port $PORT --lifespan on
