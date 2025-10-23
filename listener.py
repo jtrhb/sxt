@@ -4,11 +4,14 @@ import json
 import time
 import typing
 import threading
+import os
 import websockets
 from websockets_proxy import Proxy, proxy_connect
 from redis_client import publisher
 
 proxy_url = "socks5://14ac82adf87db:dec6b3a5a6@194.153.253.190:12324"
+# 环境变量控制是否使用代理，默认不使用（Railway 部署时可以设置 USE_PROXY=true）
+USE_PROXY = os.getenv("USE_PROXY", "false").lower() == "true"
 
 class Listener(SXTWebSocketClient):
     def __init__(
@@ -167,42 +170,62 @@ class Listener(SXTWebSocketClient):
         print("Starting WebSocket connection...")
         retry_count = 0
         max_retry_delay = 60
+        connection_timeout = 30  # 30秒连接超时
         
         while True:
             try:
                 proxy = Proxy.from_url(proxy_url)
-                print(f"[Connecting] 🔐 使用代理连接 (尝试 #{retry_count + 1})")
-                print(f"[Proxy] 代理地址: {proxy_url.split('@')[1] if '@' in proxy_url else proxy_url}")
+                use_proxy_msg = "✅ 启用" if USE_PROXY else "❌ 禁用"
+                print(f"[Connecting] 🔐 尝试连接 #{retry_count + 1} (代理: {use_proxy_msg})")
+                if USE_PROXY:
+                    print(f"[Proxy] 代理地址: {proxy_url.split('@')[1] if '@' in proxy_url else proxy_url}")
+                print(f"[Timeout] 连接超时设置: {connection_timeout}秒")
                 
                 start_time = time.time()
-                # async with proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15) as self.websocket:
-                async with websockets.connect(self.ws_uri, open_timeout=15) as self.websocket:
-                    connect_time = time.time() - start_time
-                    print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
-                    
-                    # 设置连接就绪标志
-                    if hasattr(self.sxt, 'connection_ready'):
-                        self.sxt.connection_ready = True
-                    
-                    retry_count = 0  # 连接成功，重置计数器
-
-                    # 发送登录消息
-                    await self.ws_send({
-                        "type": 1,
-                        "token": self.token,
-                        "appId": self.app_id
-                    })
-
-                    # 接收和处理消息
-                    while True:
-                        response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
-                        server_message = json.loads(response)
-                        print(f"[Received] {server_message}")
+                
+                # ✅ 使用 asyncio.timeout 控制整个连接过程
+                try:
+                    async with asyncio.timeout(connection_timeout):
+                        # 根据配置选择连接方式
+                        if USE_PROXY:
+                            # 使用代理连接
+                            websocket_ctx = proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15)
+                        else:
+                            # 直接连接
+                            websocket_ctx = websockets.connect(self.ws_uri, open_timeout=15)
                         
-                        if server_message.get("type") == 2:
-                            await self.ws_send({"type": 130, "ack": server_message["seq"]})
-                        
-                        asyncio.create_task(self.handle_message(server_message))
+                        async with websocket_ctx as self.websocket:
+                            connect_time = time.time() - start_time
+                            print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
+                            
+                            # 设置连接就绪标志
+                            if hasattr(self.sxt, 'connection_ready'):
+                                self.sxt.connection_ready = True
+                            
+                            retry_count = 0  # 连接成功，重置计数器
+
+                            # 发送登录消息
+                            await self.ws_send({
+                                "type": 1,
+                                "token": self.token,
+                                "appId": self.app_id
+                            })
+
+                            # 接收和处理消息
+                            while True:
+                                response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
+                                server_message = json.loads(response)
+                                print(f"[Received] {server_message}")
+                                
+                                if server_message.get("type") == 2:
+                                    await self.ws_send({"type": 130, "ack": server_message["seq"]})
+                                
+                                asyncio.create_task(self.handle_message(server_message))
+                
+                except asyncio.TimeoutError:
+                    elapsed = time.time() - start_time
+                    print(f"[Timeout] ❌ WebSocket连接超时 ({elapsed:.2f}秒 > {connection_timeout}秒)")
+                    raise  # 让外层的 Exception 处理重连
 
             except Exception as e:
                 # 连接失败，重置标志

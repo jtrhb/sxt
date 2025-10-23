@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     
     # 关闭时的操作
     print("🛑 关闭 SXT 应用...")
-    consumer.stop_listening()
+    await consumer.stop_listening()
     task.cancel()
     try:
         await task

@@ -3,12 +3,15 @@ import time
 import asyncio
 from datetime import datetime
 import time
+import os
 from listener import LSXT
 from redis_client import subscriber, publisher
 
 # Redis键名常量
 TOKEN_STORAGE_KEY = "sxt:tokens"  # Hash存储 listener_id -> token
 LISTENER_STATUS_KEY = "sxt:listener_status"  # Hash存储 listener_id -> status
+CONSUMER_LOCK_KEY = "sxt:consumer_lock"  # 消费者锁
+LISTENER_OWNER_KEY = "sxt:listener_owners"  # Hash存储 listener_id -> instance_id
 
 # 队列名称
 MESSAGE_QUEUE = "message_queue"
@@ -21,6 +24,10 @@ class ListenerCommandConsumer:
         self.app = app
         # 本地缓存，用于快速访问
         self.tokens = {}  # {listener_id: token}
+        # ✅ 生成唯一实例ID
+        self.instance_id = f"instance-{os.getpid()}-{int(time.time() * 1000)}"
+        self.lock_acquired = False
+        print(f"🆔 实例ID: {self.instance_id}")
 
     async def _load_tokens_from_redis(self):
         """从Redis加载所有存储的tokens（异步版本）"""
@@ -74,6 +81,129 @@ class ListenerCommandConsumer:
             print(f"📊 已更新 {listener_id} 状态到Redis: {status}")
         except Exception as e:
             print(f"❌ 更新listener状态到Redis失败: {e}")
+    
+    async def _register_instance(self):
+        """注册实例到Redis"""
+        try:
+            instance_key = f"sxt:instances:{self.instance_id}"
+            await subscriber.setex(
+                instance_key,
+                60,  # 60秒过期
+                json.dumps({
+                    "started_at": time.time(),
+                    "pid": os.getpid()
+                })
+            )
+            print(f"✅ 实例 {self.instance_id} 已注册")
+        except Exception as e:
+            print(f"❌ 注册实例失败: {e}")
+    
+    async def _unregister_instance(self):
+        """注销实例"""
+        try:
+            instance_key = f"sxt:instances:{self.instance_id}"
+            await subscriber.delete(instance_key)
+            
+            # 释放所有该实例拥有的 listeners
+            await self._release_all_listeners()
+            
+            print(f"✅ 实例 {self.instance_id} 已注销")
+        except Exception as e:
+            print(f"❌ 注销实例失败: {e}")
+    
+    async def _renew_lock(self):
+        """定期续期锁"""
+        try:
+            while self.running and self.lock_acquired:
+                await asyncio.sleep(15)  # 每15秒续期一次
+                
+                current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
+                if current_holder == self.instance_id:
+                    await subscriber.expire(CONSUMER_LOCK_KEY, 30)
+                    # print(f"🔄 锁已续期")
+                else:
+                    print(f"⚠️ 锁已被其他实例持有: {current_holder}")
+                    self.lock_acquired = False
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"❌ 续期锁失败: {e}")
+    
+    async def _takeover_listeners(self):
+        """接管所有需要运行的 listeners"""
+        try:
+            print(f"🔄 实例 {self.instance_id} 开始接管 listeners...")
+            
+            # 获取所有 tokens
+            all_tokens = await subscriber.hgetall(TOKEN_STORAGE_KEY)
+            
+            if not all_tokens:
+                print("📭 没有需要接管的 listeners")
+                return
+            
+            # 检查每个 listener 的所有者
+            for listener_id, token in all_tokens.items():
+                owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
+                
+                if owner and owner != self.instance_id:
+                    # 检查原所有者是否还活着
+                    instance_key = f"sxt:instances:{owner}"
+                    instance_exists = await subscriber.exists(instance_key)
+                    
+                    if instance_exists:
+                        print(f"⏭️ Listener {listener_id} 由活跃实例 {owner} 拥有，跳过")
+                        continue
+                    else:
+                        print(f"🔄 Listener {listener_id} 的原所有者 {owner} 已失效，接管")
+                
+                # 接管 listener
+                if listener_id not in self.app.SXTS:
+                    print(f"🚀 接管 Listener {listener_id}...")
+                    self.tokens[listener_id] = token
+                    
+                    sxt = LSXT(
+                        listener_id=listener_id,
+                        cookies={"access-token-sxt.xiaohongshu.com": token}
+                    )
+                    sxt.run()
+                    self.app.SXTS[listener_id] = sxt
+                    
+                    # 标记所有权
+                    await subscriber.hset(LISTENER_OWNER_KEY, listener_id, self.instance_id)
+                    await self._update_listener_status_async(
+                        listener_id, 
+                        "running", 
+                        {"instance_id": self.instance_id, "takeover": True}
+                    )
+                    
+                    print(f"✅ 成功接管 Listener {listener_id}")
+                    
+                    # 避免同时启动太多
+                    await asyncio.sleep(1)
+            
+            print(f"🎉 接管完成，当前运行 {len(self.app.SXTS)} 个 listeners")
+            
+        except Exception as e:
+            print(f"❌ 接管 listeners 失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def _release_all_listeners(self):
+        """释放所有该实例拥有的 listeners"""
+        try:
+            owners = await subscriber.hgetall(LISTENER_OWNER_KEY)
+            released_count = 0
+            
+            for listener_id, owner in owners.items():
+                if owner == self.instance_id:
+                    await subscriber.hdel(LISTENER_OWNER_KEY, listener_id)
+                    released_count += 1
+            
+            if released_count > 0:
+                print(f"✅ 释放了 {released_count} 个 listeners 的所有权")
+        except Exception as e:
+            print(f"❌ 释放 listeners 失败: {e}")
 
     async def auto_recover_listeners(self):
         """自动恢复所有存储的listeners（异步版本）"""
@@ -88,6 +218,18 @@ class ListenerCommandConsumer:
                         print(f"⚠️ Listener {listener_id} 已在运行，跳过恢复")
                         continue
                     
+                    # ✅ 检查是否被其他实例拥有
+                    owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
+                    if owner and owner != self.instance_id:
+                        # 检查原所有者是否还活着
+                        instance_key = f"sxt:instances:{owner}"
+                        instance_exists = await subscriber.exists(instance_key)
+                        if instance_exists:
+                            print(f"⚠️ Listener {listener_id} 已被实例 {owner} 拥有，跳过恢复")
+                            continue
+                        else:
+                            print(f"🔄 Listener {listener_id} 的原所有者 {owner} 已失效，接管")
+                    
                     print(f"🚀 恢复 Listener {listener_id}...")
                     sxt = LSXT(
                         listener_id=listener_id,
@@ -96,8 +238,14 @@ class ListenerCommandConsumer:
                     sxt.run()
                     self.app.SXTS[listener_id] = sxt
                     
+                    # ✅ 标记所有权
+                    await subscriber.hset(LISTENER_OWNER_KEY, listener_id, self.instance_id)
+                    
                     # 异步更新状态
-                    await self._update_listener_status_async(listener_id, "running", {"recovered": True})
+                    await self._update_listener_status_async(listener_id, "running", {
+                        "recovered": True,
+                        "instance_id": self.instance_id
+                    })
                     
                     print(f"✅ 成功恢复 Listener {listener_id}")
                     recovered_count += 1
@@ -115,125 +263,189 @@ class ListenerCommandConsumer:
             print(f"❌ 自动恢复过程失败: {e}")
 
     async def start_listening(self):
-        """实时监听并处理新消息（异步版本）"""
+        """实时监听并处理新消息（带分布式锁）"""
         self.running = True
         reconnect_attempts = 0
         max_reconnect_attempts = 5
         pubsub = None
         
-        while self.running and reconnect_attempts < max_reconnect_attempts:
-            try:
-                # ✅ 创建异步pubsub
-                pubsub = subscriber.pubsub()
-                await pubsub.subscribe("listenerCommandChannel")
-                print(f"🔗 Consumer subscribed to channel (attempt {reconnect_attempts + 1})")
-                reconnect_attempts = 0  # 连接成功，重置计数器
+        # ✅ 注册实例
+        await self._register_instance()
+        
+        try:
+            while self.running and reconnect_attempts < max_reconnect_attempts:
+                # ✅ 尝试获取消费者锁
+                lock_acquired = await subscriber.set(
+                    CONSUMER_LOCK_KEY,
+                    self.instance_id,
+                    nx=True,  # 只在键不存在时设置
+                    ex=30     # 30秒过期
+                )
                 
-                # ✅ 异步迭代消息
-                async for message in pubsub.listen():
-                    # 检查是否应该停止
-                    if not self.running:
-                        print("🛑 收到停止信号，退出监听循环")
-                        break
+                if not lock_acquired:
+                    # 锁被其他实例持有
+                    current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
+                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}")
                     
-                    # 处理订阅确认消息
-                    if message['type'] == 'subscribe':
-                        print(f"✅ 成功订阅频道: {message['channel']}")
-                        continue
+                    # 等待5秒后重试
+                    await asyncio.sleep(5)
+                    continue
+                
+                self.lock_acquired = True
+                print(f"✅ 实例 {self.instance_id} 获得监听权限")
+                
+                # ✅ 注册实例
+                await self._register_instance()
+                
+                # 启动锁续期任务
+                renew_task = asyncio.create_task(self._renew_lock())
+                
+                try:
+                    # ✅ 接管现有的 listeners
+                    await self._takeover_listeners()
                     
-                    # 处理实际消息
-                    if message['type'] == 'message':
-                        print(f"📨 收到消息: {message['data']}")
+                    # 创建异步pubsub
+                    pubsub = subscriber.pubsub()
+                    await pubsub.subscribe("listenerCommandChannel")
+                    print(f"🔗 实例 {self.instance_id} 已订阅频道 (attempt {reconnect_attempts + 1})")
+                    reconnect_attempts = 0  # 连接成功，重置计数器
+                    
+                    # 异步迭代消息
+                    async for message in pubsub.listen():
+                        # 检查是否应该停止
+                        if not self.running:
+                            print("🛑 收到停止信号，退出监听循环")
+                            break
                         
-                        try:
-                            payload = json.loads(message["data"])
-                            command = payload.get("command", "").lower()
-                            listener_id = payload.get("listener_id", "").strip()
-                            token = payload.get("sxtToken", "").strip()
+                        # 处理订阅确认消息
+                        if message['type'] == 'subscribe':
+                            print(f"✅ 成功订阅频道: {message['channel']}")
+                            continue
+                        
+                        # 处理实际消息
+                        if message['type'] == 'message':
+                            print(f"📨 收到消息: {message['data']}")
                             
-                            print(f"🎯 处理命令: {command}, listener_id: {listener_id}")
-                            
-                            # 验证必需字段
-                            if not command or not listener_id:
-                                print(f"⚠️ 消息缺少必要字段: {payload}")
-                                continue
-                            
-                            # ✅ 异步处理命令
-                            if command == "start":
-                                await self.start_listener(listener_id, token)
+                            try:
+                                payload = json.loads(message["data"])
+                                command = payload.get("command", "").lower()
+                                listener_id = payload.get("listener_id", "").strip()
+                                token = payload.get("sxtToken", "").strip()
                                 
-                            elif command == "stop":
-                                print(f"🛑 执行停止命令: {listener_id}")
-                                await self.stop_listener(listener_id)
+                                print(f"🎯 处理命令: {command}, listener_id: {listener_id}")
                                 
-                            elif command == "restart":
-                                print(f"🔄 执行重启命令: {listener_id}")
-                                reason = payload.get("reason")
-                                await self.restart_listener(listener_id, token, reason)
+                                # 验证必需字段
+                                if not command or not listener_id:
+                                    print(f"⚠️ 消息缺少必要字段: {payload}")
+                                    continue
                                 
-                            elif command == "status":
-                                await self.show_status()
-                                
-                            elif command == "recover":
-                                print("🔄 执行自动恢复命令")
-                                await self.auto_recover_listeners()
-                                
-                            elif command == "ping":
-                                print(f"🏓 Pong - 监听器活跃，当前时间: {datetime.now()}")
-                                
-                            else:
-                                print(f"❓ 未知命令 '{command}'")
-                                print("   支持的命令: start, stop, restart, status, recover, ping")
-                                
-                        except json.JSONDecodeError as e:
-                            print(f"❌ 无效 JSON 消息: {message['data']}, 错误: {e}")
-                        except Exception as e:
-                            print(f"❌ 处理命令时发生错误: {e}")
-                            import traceback
-                            traceback.print_exc()
-            
-                # 循环正常退出，清理订阅
-                print("🔌 正在取消订阅...")
-                await pubsub.unsubscribe("listenerCommandChannel")
-            
-            except asyncio.CancelledError:
-                print("🛑 监听任务被取消")
-                break
-            
-            except Exception as e:
-                reconnect_attempts += 1
-                print(f"❌ Redis监听错误 (尝试 {reconnect_attempts}/{max_reconnect_attempts}): {e}")
-                import traceback
-                traceback.print_exc()
-                
-                if reconnect_attempts < max_reconnect_attempts and self.running:
-                    wait_time = min(2 ** reconnect_attempts, 30)  # 指数退避，最大30秒
-                    print(f"🔄 {wait_time}秒后重试...")
-                    await asyncio.sleep(wait_time)
-                else:
-                    print("❌ 达到最大重连次数或收到停止信号")
+                                # ✅ 异步处理命令
+                                if command == "start":
+                                    await self.start_listener(listener_id, token)
+                                    
+                                elif command == "stop":
+                                    print(f"🛑 执行停止命令: {listener_id}")
+                                    await self.stop_listener(listener_id)
+                                    
+                                elif command == "restart":
+                                    print(f"🔄 执行重启命令: {listener_id}")
+                                    reason = payload.get("reason")
+                                    await self.restart_listener(listener_id, token, reason)
+                                    
+                                elif command == "status":
+                                    await self.show_status()
+                                    
+                                elif command == "recover":
+                                    print("🔄 执行自动恢复命令")
+                                    await self.auto_recover_listeners()
+                                    
+                                elif command == "ping":
+                                    print(f"🏓 Pong - 监听器活跃，当前时间: {datetime.now()}")
+                                    
+                                else:
+                                    print(f"❓ 未知命令 '{command}'")
+                                    print("   支持的命令: start, stop, restart, status, recover, ping")
+                                    
+                            except json.JSONDecodeError as e:
+                                print(f"❌ 无效 JSON 消息: {message['data']}, 错误: {e}")
+                            except Exception as e:
+                                print(f"❌ 处理命令时发生错误: {e}")
+                                import traceback
+                                traceback.print_exc()
+                    # 循环正常退出，清理订阅
+                    print("🔌 正在取消订阅...")
+                    await pubsub.unsubscribe("listenerCommandChannel")
+                    
+                except asyncio.CancelledError:
+                    print("🛑 监听任务被取消")
                     break
                     
-            finally:
-                # ✅ 确保资源被清理
-                if pubsub:
-                    try:
-                        await pubsub.unsubscribe("listenerCommandChannel")
-                        await pubsub.close()
-                        print("🔌 Pubsub连接已关闭")
-                    except Exception as e:
-                        print(f"⚠️ 清理pubsub时出错: {e}")
-    
-        self.running = False
-        print("🏁 监听器已完全停止")
+                except Exception as e:
+                    reconnect_attempts += 1
+                    print(f"❌ Redis监听错误 (尝试 {reconnect_attempts}/{max_reconnect_attempts}): {e}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    if reconnect_attempts < max_reconnect_attempts and self.running:
+                        wait_time = min(2 ** reconnect_attempts, 30)  # 指数退避，最大30秒
+                        print(f"🔄 {wait_time}秒后重试...")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        print("❌ 达到最大重连次数或收到停止信号")
+                        break
+                        
+                finally:
+                    # ✅ 取消锁续期任务
+                    if 'renew_task' in locals():
+                        renew_task.cancel()
+                        try:
+                            await renew_task
+                        except asyncio.CancelledError:
+                            pass
+                    
+                    # ✅ 释放锁
+                    if self.lock_acquired:
+                        current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
+                        if current_holder == self.instance_id:
+                            await subscriber.delete(CONSUMER_LOCK_KEY)
+                            print(f"🔓 实例 {self.instance_id} 释放监听锁")
+                        self.lock_acquired = False
+                    
+                    # ✅ 确保资源被清理
+                    if pubsub:
+                        try:
+                            await pubsub.unsubscribe("listenerCommandChannel")
+                            await pubsub.close()
+                            print("🔌 Pubsub连接已关闭")
+                        except Exception as e:
+                            print(f"⚠️ 清理pubsub时出错: {e}")
+        
+        finally:
+            # ✅ 注销实例
+            await self._unregister_instance()
+            self.running = False
+            print("🏁 监听器已完全停止")
 
     async def start_listener(self, listener_id: str, token: str):
-        """启动监听器（异步版本）"""
+        """启动监听器（异步版本，带所有权检查）"""
+        # ✅ 检查是否已经被其他实例运行
+        owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
+        if owner and owner != self.instance_id:
+            # 检查原所有者是否还活着
+            instance_key = f"sxt:instances:{owner}"
+            instance_exists = await subscriber.exists(instance_key)
+            
+            if instance_exists:
+                print(f"⚠️ Listener {listener_id} 已被实例 {owner} 运行，拒绝启动")
+                return
+            else:
+                print(f"🔄 Listener {listener_id} 的原所有者 {owner} 已失效，接管")
+        
         if listener_id in self.app.SXTS:
-            print(f"⚠️  listener {listener_id} 已经在运行")
+            print(f"⚠️ Listener {listener_id} 已经在本实例运行")
             return
 
-        print(f"🚀 启动 listener: {listener_id}")
+        print(f"🚀 实例 {self.instance_id} 启动 listener: {listener_id}")
         self.tokens[listener_id] = token
         
         # 异步保存token到Redis
@@ -246,23 +458,42 @@ class ListenerCommandConsumer:
         sxt.run()
         self.app.SXTS[listener_id] = sxt
         
+        # ✅ 标记所有权
+        await subscriber.hset(LISTENER_OWNER_KEY, listener_id, self.instance_id)
+        
         # 异步更新Redis状态
-        await self._update_listener_status_async(listener_id, "running")
+        await self._update_listener_status_async(
+            listener_id, 
+            "running",
+            {"instance_id": self.instance_id}
+        )
 
     async def stop_listener(self, listener_id):
-        """停止监听（异步版本）"""
+        """停止监听（异步版本，带所有权检查）"""
         try:
+            # ✅ 检查所有权
+            owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
+            if owner and owner != self.instance_id:
+                print(f"⚠️ Listener {listener_id} 由实例 {owner} 拥有，无权停止")
+                return
+            
             print(f"🔍 检查 Listener {listener_id} 是否存在...")
             if self.app.SXTS.get(listener_id) is None:
                 print(f"⚠️ Listener {listener_id} 不存在或已经停止")
+                
+                # 清理所有权标记
+                await subscriber.hdel(LISTENER_OWNER_KEY, listener_id)
                 return
                 
-            print(f"🛑 正在停止 Listener {listener_id}...")
+            print(f"🛑 实例 {self.instance_id} 正在停止 Listener {listener_id}...")
             self.app.SXTS[listener_id].stop_background_loop()
             del self.app.SXTS[listener_id]
             
             # 删除对应的token（从Redis和本地缓存）
             await self._remove_token_from_redis(listener_id)
+            
+            # ✅ 释放所有权
+            await subscriber.hdel(LISTENER_OWNER_KEY, listener_id)
             
             # 更新状态
             await self._update_listener_status_async(listener_id, "stopped")
@@ -344,10 +575,13 @@ class ListenerCommandConsumer:
         except Exception as e:
             print(f"❌ 列出tokens失败: {e}")
 
-    def stop_listening(self):
+    async def stop_listening(self):
         """停止监听"""
-        print("🛑 正在停止监听...")
+        print(f"🛑 停止监听 (实例 {self.instance_id})")
         self.running = False
+        
+        # ✅ 注销实例
+        await self._unregister_instance()
 
     async def restart_listener(self, listener_id, token=None, reason=None):
         """重启监听器（异步版本）"""
