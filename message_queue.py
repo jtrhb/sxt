@@ -293,9 +293,6 @@ class ListenerCommandConsumer:
         max_reconnect_attempts = 5
         pubsub = None
         
-        # ✅ 注册实例
-        await self._register_instance()
-        
         try:
             while self.running and reconnect_attempts < max_reconnect_attempts:
                 # ✅ 尝试获取消费者锁
@@ -317,6 +314,9 @@ class ListenerCommandConsumer:
                 
                 self.lock_acquired = True
                 print(f"✅ 实例 {self.instance_id} 获得监听权限")
+                
+                # ✅ 注册实例（获得锁后才注册）
+                await self._register_instance()
                 
                 # ✅ 注册实例
                 await self._register_instance()

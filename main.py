@@ -19,15 +19,12 @@ async def lifespan(app: FastAPI):
     # 异步加载tokens
     await consumer._load_tokens_from_redis()
     
-    # 启动消息队列监听
+    # 启动消息队列监听（会在获得锁后自动接管 listeners）
     task = asyncio.create_task(consumer.start_listening())
     
-    # 等待订阅建立
-    await asyncio.sleep(0.5)
-    
-    # 自动恢复之前存储的listeners（异步）
-    print("🔄 尝试自动恢复listeners...")
-    await consumer.auto_recover_listeners()
+    # ⚠️ 不在这里调用 auto_recover_listeners()
+    # 因为需要等待获得锁后才能启动 listeners
+    # _takeover_listeners() 会在 start_listening() 获得锁后自动调用
     
     yield
     
