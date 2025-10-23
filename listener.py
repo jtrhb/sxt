@@ -175,7 +175,8 @@ class Listener(SXTWebSocketClient):
                 print(f"[Proxy] 代理地址: {proxy_url.split('@')[1] if '@' in proxy_url else proxy_url}")
                 
                 start_time = time.time()
-                async with proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15) as self.websocket:
+                # async with proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15) as self.websocket:
+                async with websockets.connect(self.ws_uri, open_timeout=15) as self.websocket:
                     connect_time = time.time() - start_time
                     print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
                     
