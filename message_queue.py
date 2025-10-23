@@ -603,16 +603,27 @@ class ListenerCommandConsumer:
         
         # ✅ 停止所有运行中的 listeners
         listeners_to_stop = list(self.app.SXTS.keys())
+        print(f"📊 当前运行中的 listeners 数量: {len(listeners_to_stop)}")
+        
         if listeners_to_stop:
-            print(f"🛑 停止 {len(listeners_to_stop)} 个运行中的 listeners...")
+            print(f"🛑 停止 {len(listeners_to_stop)} 个运行中的 listeners: {listeners_to_stop}")
             for listener_id in listeners_to_stop:
                 try:
-                    print(f"  🛑 停止 Listener {listener_id}...")
-                    self.app.SXTS[listener_id].stop_background_loop()
+                    print(f"  🛑 正在停止 Listener {listener_id}...")
+                    if hasattr(self.app.SXTS[listener_id], 'stop_background_loop'):
+                        self.app.SXTS[listener_id].stop_background_loop()
+                        print(f"  ✅ Listener {listener_id} 后台线程已停止")
+                    else:
+                        print(f"  ⚠️ Listener {listener_id} 没有 stop_background_loop 方法")
                     del self.app.SXTS[listener_id]
+                    print(f"  ✅ Listener {listener_id} 已从字典中移除")
                 except Exception as e:
-                    print(f"  ⚠️ 停止 Listener {listener_id} 时出错: {e}")
+                    print(f"  ❌ 停止 Listener {listener_id} 时出错: {e}")
+                    import traceback
+                    traceback.print_exc()
             print(f"✅ 所有 listeners 已停止")
+        else:
+            print(f"📭 没有运行中的 listeners 需要停止")
         
         # ✅ 注销实例（会释放所有权）
         await self._unregister_instance()
