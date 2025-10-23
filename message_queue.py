@@ -306,9 +306,18 @@ class ListenerCommandConsumer:
                 if not lock_acquired:
                     # 锁被其他实例持有
                     current_holder = await subscriber.get(CONSUMER_LOCK_KEY)
-                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}")
+                    lock_ttl = await subscriber.ttl(CONSUMER_LOCK_KEY)
+                    print(f"⏳ 实例 {self.instance_id} 等待监听权限，当前持有者: {current_holder}, 锁剩余TTL: {lock_ttl}秒")
+                    
+                    # 检查持有者是否还活着
+                    if current_holder:
+                        instance_key = f"sxt:instances:{current_holder}"
+                        instance_exists = await subscriber.exists(instance_key)
+                        if not instance_exists:
+                            print(f"⚠️ 持有者 {current_holder} 已失效但锁未释放，等待锁自动过期...")
                     
                     # 等待5秒后重试
+                    print(f"💤 等待 5 秒后重试获取锁 (尝试 {reconnect_attempts + 1}/{max_reconnect_attempts})...")
                     await asyncio.sleep(5)
                     continue
                 
