@@ -183,48 +183,47 @@ class Listener(SXTWebSocketClient):
                 
                 start_time = time.time()
                 
-                # ✅ 使用 asyncio.timeout 控制整个连接过程
+                # ✅ 使用 asyncio.wait_for 控制连接超时（兼容 Python 3.10+）
                 try:
-                    async with asyncio.timeout(connection_timeout):
-                        # 根据配置选择连接方式
-                        if USE_PROXY:
-                            # 使用代理连接
-                            websocket_ctx = proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15)
-                        else:
-                            # 直接连接
-                            websocket_ctx = websockets.connect(self.ws_uri, open_timeout=15)
+                    # 根据配置选择连接方式
+                    if USE_PROXY:
+                        # 使用代理连接
+                        websocket_ctx = proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15)
+                    else:
+                        # 直接连接
+                        websocket_ctx = websockets.connect(self.ws_uri, open_timeout=15)
+                    
+                    async with websocket_ctx as self.websocket:
+                        connect_time = time.time() - start_time
+                        print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
                         
-                        async with websocket_ctx as self.websocket:
-                            connect_time = time.time() - start_time
-                            print(f"[Connected] ✅ WebSocket连接已建立 ({connect_time:.2f}秒)")
-                            
-                            # 设置连接就绪标志
-                            if hasattr(self.sxt, 'connection_ready'):
-                                self.sxt.connection_ready = True
-                            
-                            retry_count = 0  # 连接成功，重置计数器
+                        # 设置连接就绪标志
+                        if hasattr(self.sxt, 'connection_ready'):
+                            self.sxt.connection_ready = True
+                        
+                        retry_count = 0  # 连接成功，重置计数器
 
-                            # 发送登录消息
-                            await self.ws_send({
-                                "type": 1,
-                                "token": self.token,
-                                "appId": self.app_id
-                            })
+                        # 发送登录消息
+                        await self.ws_send({
+                            "type": 1,
+                            "token": self.token,
+                            "appId": self.app_id
+                        })
 
-                            # 接收和处理消息
-                            while True:
-                                response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
-                                server_message = json.loads(response)
-                                print(f"[Received] {server_message}")
-                                
-                                if server_message.get("type") == 2:
-                                    await self.ws_send({"type": 130, "ack": server_message["seq"]})
-                                
-                                asyncio.create_task(self.handle_message(server_message))
+                        # 接收和处理消息
+                        while True:
+                            response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
+                            server_message = json.loads(response)
+                            print(f"[Received] {server_message}")
+                            
+                            if server_message.get("type") == 2:
+                                await self.ws_send({"type": 130, "ack": server_message["seq"]})
+                            
+                            asyncio.create_task(self.handle_message(server_message))
                 
                 except asyncio.TimeoutError:
                     elapsed = time.time() - start_time
-                    print(f"[Timeout] ❌ WebSocket连接超时 ({elapsed:.2f}秒 > {connection_timeout}秒)")
+                    print(f"[Timeout] ❌ WebSocket连接超时 ({elapsed:.2f}秒)")
                     raise  # 让外层的 Exception 处理重连
 
             except Exception as e:

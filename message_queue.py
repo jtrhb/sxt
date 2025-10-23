@@ -162,22 +162,37 @@ class ListenerCommandConsumer:
                     print(f"🚀 接管 Listener {listener_id}...")
                     self.tokens[listener_id] = token
                     
-                    sxt = LSXT(
-                        listener_id=listener_id,
-                        cookies={"access-token-sxt.xiaohongshu.com": token}
-                    )
-                    sxt.run()
-                    self.app.SXTS[listener_id] = sxt
-                    
-                    # 标记所有权
-                    await subscriber.hset(LISTENER_OWNER_KEY, listener_id, self.instance_id)
-                    await self._update_listener_status_async(
-                        listener_id, 
-                        "running", 
-                        {"instance_id": self.instance_id, "takeover": True}
-                    )
-                    
-                    print(f"✅ 成功接管 Listener {listener_id}")
+                    try:
+                        sxt = LSXT(
+                            listener_id=listener_id,
+                            cookies={"access-token-sxt.xiaohongshu.com": token}
+                        )
+                        sxt.run()
+                        self.app.SXTS[listener_id] = sxt
+                        
+                        # 标记所有权
+                        await subscriber.hset(LISTENER_OWNER_KEY, listener_id, self.instance_id)
+                        await self._update_listener_status_async(
+                            listener_id, 
+                            "running", 
+                            {"instance_id": self.instance_id, "takeover": True}
+                        )
+                        
+                        print(f"✅ 成功接管 Listener {listener_id}")
+                    except Exception as e:
+                        print(f"❌ 接管 Listener {listener_id} 失败: {e}")
+                        # 清理失败的 listener
+                        if listener_id in self.app.SXTS:
+                            del self.app.SXTS[listener_id]
+                        if listener_id in self.tokens:
+                            del self.tokens[listener_id]
+                        await self._update_listener_status_async(
+                            listener_id,
+                            "failed",
+                            {"error": str(e), "operation": "takeover"}
+                        )
+                        # 继续处理其他 listeners，不要因为一个失败而中断
+                        continue
                     
                     # 避免同时启动太多
                     await asyncio.sleep(1)
@@ -212,25 +227,25 @@ class ListenerCommandConsumer:
             recovered_count = 0
             
             for listener_id, token in self.tokens.items():
-                try:
-                    # 检查是否已经在运行
-                    if self.app.SXTS.get(listener_id) is not None:
-                        print(f"⚠️ Listener {listener_id} 已在运行，跳过恢复")
+                # 检查是否已经在运行
+                if self.app.SXTS.get(listener_id) is not None:
+                    print(f"⚠️ Listener {listener_id} 已在运行，跳过恢复")
+                    continue
+                
+                # ✅ 检查是否被其他实例拥有
+                owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
+                if owner and owner != self.instance_id:
+                    # 检查原所有者是否还活着
+                    instance_key = f"sxt:instances:{owner}"
+                    instance_exists = await subscriber.exists(instance_key)
+                    if instance_exists:
+                        print(f"⚠️ Listener {listener_id} 已被实例 {owner} 拥有，跳过恢复")
                         continue
-                    
-                    # ✅ 检查是否被其他实例拥有
-                    owner = await subscriber.hget(LISTENER_OWNER_KEY, listener_id)
-                    if owner and owner != self.instance_id:
-                        # 检查原所有者是否还活着
-                        instance_key = f"sxt:instances:{owner}"
-                        instance_exists = await subscriber.exists(instance_key)
-                        if instance_exists:
-                            print(f"⚠️ Listener {listener_id} 已被实例 {owner} 拥有，跳过恢复")
-                            continue
-                        else:
-                            print(f"🔄 Listener {listener_id} 的原所有者 {owner} 已失效，接管")
-                    
-                    print(f"🚀 恢复 Listener {listener_id}...")
+                    else:
+                        print(f"🔄 Listener {listener_id} 的原所有者 {owner} 已失效，接管")
+                
+                print(f"🚀 恢复 Listener {listener_id}...")
+                try:
                     sxt = LSXT(
                         listener_id=listener_id,
                         cookies={"access-token-sxt.xiaohongshu.com": token}
@@ -250,12 +265,21 @@ class ListenerCommandConsumer:
                     print(f"✅ 成功恢复 Listener {listener_id}")
                     recovered_count += 1
                     
-                    # 避免同时启动太多，间隔一下（使用异步sleep）
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    print(f"❌ 恢复 Listener {listener_id} 失败: {e}")
-                    await self._update_listener_status_async(listener_id, "failed", {"error": str(e)})
+                except Exception as init_error:
+                    # LSXT 初始化失败（网络超时等）
+                    print(f"❌ 初始化 Listener {listener_id} 失败: {init_error}")
+                    # 清理失败的 listener
+                    if listener_id in self.app.SXTS:
+                        del self.app.SXTS[listener_id]
+                    await self._update_listener_status_async(
+                        listener_id,
+                        "failed",
+                        {"error": str(init_error), "error_type": "init_timeout"}
+                    )
+                    # 继续处理其他 listeners
+                
+                # 避免同时启动太多，间隔一下（使用异步sleep）
+                await asyncio.sleep(1)
             
             print(f"🎉 自动恢复完成，成功恢复 {recovered_count} 个listeners")
             

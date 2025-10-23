@@ -158,6 +158,9 @@ class SXT:
         self.cookies = cookies
         self.platform = platform
         self.contact_way = contact_way
+        
+        # ✅ 设置 HTTP 请求超时（避免在 Railway 中长时间阻塞）
+        self.http_timeout = 15.0  # 15秒超时
         self.timeout = timeout
         self.websocket_client_config = websocket_client_config or {}
         self.event_emitter = AsyncIOEventEmitter()
@@ -256,7 +259,7 @@ class SXT:
 
     def get_user_info(self) -> dict:
         url = self.base_url + "/ads/user/info"
-        response = httpx.get(url, headers=self.headers, cookies=self.cookies)
+        response = httpx.get(url, headers=self.headers, cookies=self.cookies, timeout=self.http_timeout)
         return response.json()
 
     def get_user_detail(self, account_no: str) -> dict:
@@ -265,7 +268,7 @@ class SXT:
             "account_no": account_no,
             "contact_way": self.contact_way
         }
-        response = httpx.get(url, headers=self.headers, cookies=self.cookies, params=params)
+        response = httpx.get(url, headers=self.headers, cookies=self.cookies, params=params, timeout=self.http_timeout)
         return response.json()
 
     async def search_chats(self, query: str) -> dict:
