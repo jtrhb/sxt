@@ -7,4 +7,8 @@ echo "📍 启动端口: $PORT"
 echo "🌍 环境: ${RAILWAY_ENVIRONMENT:-local}"
 
 # uvicorn main:app --host 0.0.0.0 --port $PORT --lifespan on
-exec python main.py
+exec uvicorn main:app \
+    --host 0.0.0.0 \
+    --port $PORT \
+    --log-level info \
+    --lifespan on
