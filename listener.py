@@ -33,7 +33,8 @@ class Listener(SXTWebSocketClient):
         self._hb_interval = 30
         self._hb_task = None
         self._hb_next_deadline = None
-    
+        self._shutdown_requested = False  # ✅ 添加关闭标志
+
     async def ws_send(self, data: dict) -> None:
         if self.websocket:
             # ACK消息(type=130)不需要添加seq
@@ -54,11 +55,24 @@ class Listener(SXTWebSocketClient):
             print(f"[Sent] type={data['type']}, seq={seq}")
 
     async def close(self):
+        """正确关闭 WebSocket 连接"""
         ws = getattr(self, "websocket", None)
         if ws is None:
             return
-        await ws.close()
-        self.websocket = None
+        
+        # ✅ 设置关闭标志
+        self._shutdown_requested = True
+        
+        try:
+            print(f"📤 正在关闭 WebSocket...")
+            await ws.close(code=1001, reason="GoingAway")
+            print(f"✅ WebSocket 已关闭")
+        except websockets.exceptions.ConnectionClosed:
+            print(f"ℹ️ WebSocket 已经关闭")
+        except Exception as e:
+            print(f"⚠️ 关闭 WebSocket 时出错: {e}")
+        finally:
+            self.websocket = None
 
     async def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
@@ -172,9 +186,17 @@ class Listener(SXTWebSocketClient):
         print("Starting WebSocket connection...")
         retry_count = 0
         max_retry_delay = 60
-        connection_timeout = 30  # 30秒连接超时
+        connection_timeout = 30
+        
+        # ✅ 重置关闭标志
+        self._shutdown_requested = False
         
         while True:
+            # ✅ 检查关闭标志
+            if self._shutdown_requested:
+                print(f"🛑 检测到主动关闭请求，停止重连循环")
+                break
+            
             try:
                 proxy = Proxy.from_url(proxy_url)
                 use_proxy_msg = "✅ 启用" if USE_PROXY else "❌ 禁用"
@@ -185,14 +207,10 @@ class Listener(SXTWebSocketClient):
                 
                 start_time = time.time()
                 
-                # ✅ 使用 asyncio.wait_for 控制连接超时（兼容 Python 3.10+）
                 try:
-                    # 根据配置选择连接方式
                     if USE_PROXY:
-                        # 使用代理连接
                         websocket_ctx = proxy_connect(self.ws_uri, proxy=proxy, open_timeout=15)
                     else:
-                        # 直接连接
                         websocket_ctx = websockets.connect(self.ws_uri, open_timeout=15)
                     
                     async with websocket_ctx as self.websocket:
@@ -214,6 +232,11 @@ class Listener(SXTWebSocketClient):
 
                         # 接收和处理消息
                         while True:
+                            # ✅ 接收消息前检查关闭标志
+                            if self._shutdown_requested:
+                                print(f"🛑 检测到主动关闭请求，退出消息接收循环")
+                                break
+                            
                             response = await asyncio.wait_for(self.websocket.recv(), timeout=60)
                             server_message = json.loads(response)
                             print(f"[Received] {server_message}")
@@ -226,10 +249,14 @@ class Listener(SXTWebSocketClient):
                 except asyncio.TimeoutError:
                     elapsed = time.time() - start_time
                     print(f"[Timeout] ❌ WebSocket连接超时 ({elapsed:.2f}秒)")
-                    raise  # 让外层的 Exception 处理重连
+                    raise
 
             except Exception as e:
-                # 连接失败，重置标志
+                # ✅ 检查是否主动关闭
+                if self._shutdown_requested:
+                    print(f"ℹ️ 主动关闭，忽略连接错误: {e}")
+                    break
+                
                 if hasattr(self.sxt, 'connection_ready'):
                     self.sxt.connection_ready = False
                 
@@ -238,6 +265,8 @@ class Listener(SXTWebSocketClient):
                 print(f"[Error] 连接错误: {e}, {delay}秒后重连...")
                 self.seq = 0
                 await asyncio.sleep(delay)
+        
+        print(f"🏁 WebSocket connect() 循环已退出")
 
 class LSXT(SXT):
     def __init__(self, listener_id: str, cookies=None):
@@ -253,28 +282,58 @@ class LSXT(SXT):
         self.connection_ready = False  # 添加连接状态标志
     
     def start_background_loop(self, loop):
+        """启动事件循环"""
         asyncio.set_event_loop(loop)
         try:
             loop.run_forever()
         finally:
-            # run_forever() 结束后，才会执行到这里
+            print("🧹 清理事件循环...")
+            
+            # 1. 先关闭 WebSocket
+            try:
+                loop.run_until_complete(self.websocket_client.close())
+            except Exception as e:
+                print(f"⚠️ 清理 WebSocket 失败: {e}")
+            
+            # 2. 取消所有任务
             pending = asyncio.all_tasks(loop=loop)
             for task in pending:
                 task.cancel()
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-            loop.run_until_complete(self.websocket_client.close())
-            print("WebSocket client closed.")
+            
+            # 3. 关闭循环
             loop.close()
-            print("Background loop closed.")
+            print("✅ 事件循环已关闭")
         
     def stop_background_loop(self):
-        if self.loop:
-            self.loop.call_soon_threadsafe(self.loop.stop)
-            self.loop = None
-            print("Background loop stopped.")
-            self.thread.join()
-            print("后台线程已退出，ws loop结束。")
-            
+        """停止后台循环"""
+        print(f"🛑 停止 Listener {self.listener_id}...")
+        
+        if not self.loop:
+            return
+        
+        # 先关闭 WebSocket（在停止循环之前）
+        if self.websocket_client:
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self.websocket_client.close(),
+                    self.loop
+                )
+                future.result(timeout=5)
+                print("✅ WebSocket 已提前关闭")
+            except Exception as e:
+                print(f"⚠️ 提前关闭失败（将在 finally 中重试）: {e}")
+        
+        # 停止事件循环
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        
+        # 等待线程退出
+        if self.thread:
+            self.thread.join(timeout=10)
+        
+        self.loop = None
+        print(f"✅ Listener {self.listener_id} 已停止")
+    
     async def listen(self) -> typing.NoReturn:
         await self.websocket_client.connect()
         
