@@ -60,7 +60,7 @@ class Listener(SXTWebSocketClient):
         await ws.close()
         self.websocket = None
 
-    def produce_new_msg(self, msg):
+    async def produce_new_msg(self, msg):
         message_id = f"msg:{int(time.time())}:{msg['data']['payload']['sixin_message']['id']}"
         payload = msg['data']['payload']['sixin_message']
         message = {
@@ -73,7 +73,7 @@ class Listener(SXTWebSocketClient):
             "avatar": "",
             "nickname": ""
         }
-        publisher.publish("newMessageChannel", json.dumps(message, ensure_ascii=False))
+        await publisher.publish("newMessageChannel", json.dumps(message, ensure_ascii=False))
         print(f"发送消息: {message}")
 
     def _ensure_hb_task(self):
@@ -104,12 +104,13 @@ class Listener(SXTWebSocketClient):
         match msg_type:
             case 2:  # 服务器要求 ACK - ACK已经在connect()中发送了
                 if server_message["data"]["type"] == "PUSH_SIXINTONG_MSG":
+                    print('💬 收到新消息:')
                     if server_message['data']['payload']['sixin_message']['sender_id'] != self.sxt_id:
                         content = server_message['data']['payload']['sixin_message']['content']
                         if server_message['data']['payload']['sixin_message']['message_source'] == "ads_system":
                             server_message['data']['payload']['sixin_message']['content'] = json.loads(content)["content"]
                         print(f"收到消息: {server_message['data']['payload']['sixin_message']}")
-                        self.produce_new_msg(server_message)
+                        asyncio.create_task(self.produce_new_msg(server_message))
                         return
             case 4:
                 # print("💗 收到服务器心跳 type=4")  # 高频日志，注释掉
@@ -127,7 +128,7 @@ class Listener(SXTWebSocketClient):
                     "reason": f"心跳超时: {reason}",
                     "timestamp": time.time()
                 }
-                publisher.publish("listenerCommandChannel", json.dumps(restart_message, ensure_ascii=False))
+                await publisher.publish("listenerCommandChannel", json.dumps(restart_message, ensure_ascii=False))
                 print(f"📡 已发送重启命令到消息队列: {self.listener_id}")
                 
                 # 关闭当前WebSocket连接，触发重连逻辑
